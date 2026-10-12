@@ -2,7 +2,7 @@
 
 A free, self-hosted Splitwise-style app for splitting expenses with friends. Installable on your phone (PWA).
 
-**Stack:** Vite + React + TypeScript · Supabase (Postgres, auth, realtime) · Cloudflare Pages (hosting). All on free tiers.
+**Stack:** Vite + React + TypeScript · Supabase (Postgres, auth, realtime) · Cloudflare Workers (hosting). All on free tiers.
 
 ## Features
 
@@ -27,13 +27,18 @@ A free, self-hosted Splitwise-style app for splitting expenses with friends. Ins
    npm run dev
    ```
 
-## Deploy (Cloudflare Pages)
+## Deploy (Cloudflare Workers)
+
+Live at https://splitbill.jack0726.workers.dev (auto-deploys on every push to `main`).
 
 1. Push this repo to GitHub.
-2. Cloudflare dashboard → *Workers & Pages → Create → Pages → Connect to Git*, pick the repo.
-3. Build command `npm run build`, output directory `dist`.
-4. Add environment variables `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
-5. In Supabase *Authentication → URL Configuration*, set the Site URL to your Pages URL.
+2. Cloudflare dashboard → *Workers & Pages → Create → Import a repository*, pick the repo.
+3. Build command `npm run build`, deploy command `npx wrangler deploy` (config in `wrangler.jsonc`).
+4. Under *Build variables* add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+5. In Supabase *Authentication → URL Configuration*, set the Site URL to the live URL above.
+
+Gotcha: `package-lock.json` must point at `registry.npmjs.org`. A lockfile generated through a
+private npm mirror makes Cloudflare builds fail with `403`.
 
 ## Project layout
 
@@ -49,6 +54,7 @@ A free, self-hosted Splitwise-style app for splitting expenses with friends. Ins
 ## Status / TODO
 
 - [x] Schema, auth, groups, expenses, balances, settle up, PWA
-- [ ] Run schema in Supabase and test with a friend
-- [ ] Deploy to Cloudflare Pages
+- [x] Run schema in Supabase
+- [x] Deploy to Cloudflare
+- [ ] Test with a friend on the live URL
 - [ ] Edit existing expenses, per-expense comments, expense categories
