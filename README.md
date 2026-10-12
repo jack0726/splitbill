@@ -11,6 +11,7 @@ A free, self-hosted Splitwise-style app for splitting expenses with friends. Ins
 - Expenses split equally, by exact amounts, percentages or shares
 - Net balances and simplified "who owes who" payments
 - Settle up (records a payment)
+- Edit any expense (tap *edit*); a **History** tab shows a timestamped audit log of who created, changed or deleted expenses and payments (written by database triggers, so it can't be skipped by the client)
 - Local vs settlement currency (both default to SGD): per expense, enter the amount in the trip's local currency (converted at a live FX rate, with an opt-in "Override rate" checkbox; rounded to 2 dp) or directly in the settlement currency
 - Realtime updates across members' devices
 - Installable PWA, works with light/dark mode
@@ -53,7 +54,7 @@ private npm mirror makes Cloudflare builds fail with `403`.
 - The free Supabase tier pauses a project after 7 days of inactivity; resume it from the dashboard.
 - Amounts are handled in cents to avoid rounding errors.
 - Expense amounts and splits are always stored in the settlement currency; the original local amount and FX rate are kept on the expense.
-- Existing databases: re-run the migration block at the bottom of `supabase/schema.sql`.
+- Existing databases: re-run the migration blocks at the bottom of `supabase/schema.sql` (the last one adds the audit log; if it errors on `alter publication ... audit_log` it is already added).
 
 ## Status / TODO
 
@@ -61,4 +62,5 @@ private npm mirror makes Cloudflare builds fail with `403`.
 - [x] Run schema in Supabase
 - [x] Deploy to Cloudflare
 - [ ] Test with a friend on the live URL
-- [ ] Edit existing expenses, per-expense comments, expense categories
+- [x] Edit existing expenses, audit log (History tab)
+- [ ] Per-expense comments, expense categories

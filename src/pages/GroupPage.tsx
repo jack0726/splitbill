@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { supabase, type Expense, type Group, type Profile, type Settlement } from '../lib/supabase'
+import { supabase, type AuditEntry, type Expense, type Group, type Profile, type Settlement } from '../lib/supabase'
 import { fetchRate } from '../lib/fx'
 import { netBalances, simplifyDebts, splitByWeights, splitEqually } from '../lib/balances'
 
@@ -12,11 +12,13 @@ export default function GroupPage({ userId }: { userId: string }) {
   const [members, setMembers] = useState<Profile[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [settlements, setSettlements] = useState<Settlement[]>([])
-  const [tab, setTab] = useState<'expenses' | 'balances'>('expenses')
+  const [tab, setTab] = useState<'expenses' | 'balances' | 'history'>('expenses')
+  const [audit, setAudit] = useState<AuditEntry[]>([])
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<Expense | null>(null)
 
   const load = useCallback(async () => {
-    const [g, m, e, s] = await Promise.all([
+    const [g, m, e, s, a] = await Promise.all([
       supabase.from('groups').select('*').eq('id', id).single(),
       supabase.from('group_members').select('profiles(id,name)').eq('group_id', id),
       supabase
@@ -26,11 +28,13 @@ export default function GroupPage({ userId }: { userId: string }) {
         .order('spent_on', { ascending: false })
         .order('created_at', { ascending: false }),
       supabase.from('settlements').select('*').eq('group_id', id),
+      supabase.from('audit_log').select('*').eq('group_id', id).order('created_at', { ascending: false }).limit(200),
     ])
     setGroup(g.data as Group)
     setMembers(((m.data ?? []) as unknown as { profiles: Profile }[]).map((r) => r.profiles))
     setExpenses((e.data as Expense[]) ?? [])
     setSettlements((s.data as Settlement[]) ?? [])
+    setAudit((a.data as AuditEntry[]) ?? [])
   }, [id])
 
   useEffect(() => {
@@ -81,6 +85,7 @@ export default function GroupPage({ userId }: { userId: string }) {
       <div className="tabs">
         <button className={tab === 'expenses' ? 'on' : ''} onClick={() => setTab('expenses')}>Expenses</button>
         <button className={tab === 'balances' ? 'on' : ''} onClick={() => setTab('balances')}>Balances</button>
+        <button className={tab === 'history' ? 'on' : ''} onClick={() => setTab('history')}>History</button>
       </div>
 
       {tab === 'expenses' && (
@@ -103,6 +108,7 @@ export default function GroupPage({ userId }: { userId: string }) {
                 <div className="right">
                   <div className="small muted">your share</div>
                   <div>{money(myShare)}</div>
+                  <button className="link" onClick={() => setEditing(e)}>edit</button>
                   <button className="link danger" onClick={() => remove(e.id)}>delete</button>
                 </div>
               </div>
@@ -144,42 +150,82 @@ export default function GroupPage({ userId }: { userId: string }) {
         </>
       )}
 
-      {adding && (
-        <AddExpense
+      {tab === 'history' && (
+        <>
+          {audit.length === 0 && <p className="muted">No activity recorded yet.</p>}
+          {audit.map((a) => {
+            const changed = Object.entries(a.changes ?? {})
+            return (
+              <div key={a.id} className="card">
+                <div className="small muted">{new Date(a.created_at).toLocaleString()}</div>
+                <div>
+                  <b>{a.actor_id ? name(a.actor_id) : 'Someone'}</b> {a.action} {a.entity === 'expense' ? 'expense' : ''} <b>{a.summary}</b>
+                </div>
+                {a.action === 'updated' && (
+                  <div className="small muted">
+                    {changed.length === 0 && 'split changed'}
+                    {changed.map(([k, [o, n]]) => (
+                      <div key={k}>{k}: {fmtVal(k, o, name)} → {fmtVal(k, n, name)}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </>
+      )}
+
+      {(adding || editing) && (
+        <ExpenseForm
           group={group}
           members={members}
           userId={userId}
-          onClose={() => setAdding(false)}
-          onSaved={() => { setAdding(false); load() }}
+          expense={editing}
+          onClose={() => { setAdding(false); setEditing(null) }}
+          onSaved={() => { setAdding(false); setEditing(null); load() }}
         />
       )}
     </>
   )
 }
 
-function AddExpense(p: {
+function fmtVal(key: string, v: unknown, name: (id: string) => string) {
+  if (v == null) return '–'
+  return key === 'paid_by' ? name(String(v)) : String(v)
+}
+
+function ExpenseForm(p: {
   group: Group
   members: Profile[]
   userId: string
+  expense: Expense | null
   onClose: () => void
   onSaved: () => void
 }) {
-  const [desc, setDesc] = useState('')
-  const [amount, setAmount] = useState('')
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
-  const [paidBy, setPaidBy] = useState(p.userId)
-  const [mode, setMode] = useState<SplitMode>('equal')
-  const [included, setIncluded] = useState<Record<string, boolean>>(Object.fromEntries(p.members.map((m) => [m.id, true])))
-  const [vals, setVals] = useState<Record<string, string>>({})
-  const [err, setErr] = useState('')
-
+  const ex = p.expense
   const settleCur = p.group.currency
   const hasFx = p.group.local_currency !== settleCur
+  // editing a converted expense: keep its original local amount and FX rate
+  const exForeign = !!ex && ex.local_amount != null && !!ex.local_currency && ex.local_currency !== settleCur
+  const [desc, setDesc] = useState(ex?.description ?? '')
+  const [amount, setAmount] = useState(ex ? String(exForeign ? ex.local_amount : ex.amount) : '')
+  const [date, setDate] = useState(ex?.spent_on ?? new Date().toISOString().slice(0, 10))
+  const [paidBy, setPaidBy] = useState(ex?.paid_by ?? p.userId)
+  // stored splits are in the settlement currency: exact amounts if unconverted, else proportional weights
+  const [mode, setMode] = useState<SplitMode>(ex ? (exForeign ? 'shares' : 'exact') : 'equal')
+  const [included, setIncluded] = useState<Record<string, boolean>>(
+    Object.fromEntries(p.members.map((m) => [m.id, ex ? ex.expense_splits.some((s) => s.user_id === m.id) : true])),
+  )
+  const [vals, setVals] = useState<Record<string, string>>(
+    Object.fromEntries((ex?.expense_splits ?? []).map((s) => [s.user_id, String(s.share)])),
+  )
+  const [err, setErr] = useState('')
+
   // 'local' = amount typed in the trip's local currency and converted via FX; 'settlement' = no conversion
-  const [entry, setEntry] = useState<'local' | 'settlement'>(hasFx ? 'local' : 'settlement')
+  const [entry, setEntry] = useState<'local' | 'settlement'>(ex ? (exForeign ? 'local' : 'settlement') : hasFx ? 'local' : 'settlement')
   const [liveRate, setLiveRate] = useState<number | null>(null)
-  const [manualRate, setManualRate] = useState('')
-  const [override, setOverride] = useState(false)
+  const [manualRate, setManualRate] = useState(exForeign ? String(ex.fx_rate) : '')
+  const [override, setOverride] = useState(exForeign)
   const [rateLoading, setRateLoading] = useState(false)
   const foreign = hasFx && entry === 'local'
   const entryCur = foreign ? p.group.local_currency : settleCur
@@ -232,18 +278,33 @@ function AddExpense(p: {
       if (foreign) {
         splits = splitByWeights(settleTotal, Object.fromEntries(splits.map((s) => [s.user_id, s.share])))
       }
+      const row = {
+        description: desc,
+        amount: settleTotal,
+        paid_by: paidBy,
+        spent_on: date,
+        local_amount: total,
+        local_currency: entryCur,
+        fx_rate: foreign ? fxRate : 1,
+      }
+      if (ex) {
+        const { error } = await supabase
+          .from('expenses')
+          .update({ ...row, updated_at: new Date().toISOString() })
+          .eq('id', ex.id)
+        if (error) throw error
+        const { error: e1 } = await supabase.from('expense_splits').delete().eq('expense_id', ex.id)
+        if (e1) throw e1
+        const { error: e2 } = await supabase
+          .from('expense_splits')
+          .insert(splits.map((s) => ({ ...s, expense_id: ex.id })))
+        if (e2) throw e2
+        p.onSaved()
+        return
+      }
       const { data, error } = await supabase
         .from('expenses')
-        .insert({
-          group_id: p.group.id,
-          description: desc,
-          amount: settleTotal,
-          paid_by: paidBy,
-          spent_on: date,
-          local_amount: total,
-          local_currency: entryCur,
-          fx_rate: foreign ? fxRate : 1,
-        })
+        .insert({ ...row, group_id: p.group.id })
         .select('id')
         .single()
       if (error) throw error
@@ -265,7 +326,7 @@ function AddExpense(p: {
   return (
     <div className="modal" onClick={p.onClose}>
       <form className="card sheet" onClick={(e) => e.stopPropagation()} onSubmit={save}>
-        <h3>Add expense</h3>
+        <h3>{ex ? 'Edit expense' : 'Add expense'}</h3>
         <input placeholder="Description" value={desc} onChange={(e) => setDesc(e.target.value)} required />
         {hasFx && (
           <label>Currency

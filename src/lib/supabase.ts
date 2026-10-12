@@ -27,3 +27,12 @@ export type Settlement = {
   amount: number
   created_at: string
 }
+export type AuditEntry = {
+  id: string
+  actor_id: string | null
+  action: 'created' | 'updated' | 'deleted'
+  entity: 'expense' | 'settlement'
+  summary: string
+  changes: Record<string, [unknown, unknown]> | null
+  created_at: string
+}

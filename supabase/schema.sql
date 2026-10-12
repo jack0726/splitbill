@@ -162,3 +162,65 @@ alter table public.groups alter column currency set default 'SGD';
 alter table public.expenses add column if not exists local_amount numeric(12,2);
 alter table public.expenses add column if not exists local_currency text;
 alter table public.expenses add column if not exists fx_rate numeric(18,8);
+
+-- migration: edit expenses + audit log (idempotent)
+alter table public.expenses add column if not exists updated_at timestamptz;
+
+create table if not exists public.audit_log (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid not null references public.groups(id) on delete cascade,
+  actor_id uuid references public.profiles(id) on delete set null,
+  action text not null check (action in ('created', 'updated', 'deleted')),
+  entity text not null check (entity in ('expense', 'settlement')),
+  entity_id uuid not null,
+  summary text not null,
+  changes jsonb,  -- for updates: { field: [old, new] }
+  created_at timestamptz not null default now()
+);
+create index if not exists audit_log_group_idx on public.audit_log (group_id, created_at desc);
+
+alter table public.audit_log enable row level security;
+drop policy if exists "audit read" on public.audit_log;
+create policy "audit read" on public.audit_log for select to authenticated
+  using (is_member(group_id));
+-- no insert/update/delete policies: rows are written only by the triggers below
+
+create or replace function public.log_audit()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  r record;
+  act text;
+  ent text := tg_argv[0];
+  diff jsonb;
+  summ text;
+begin
+  if tg_op = 'DELETE' then r := old; act := 'deleted';
+  elsif tg_op = 'INSERT' then r := new; act := 'created';
+  else r := new; act := 'updated'; end if;
+
+  if ent = 'expense' then
+    summ := r.description || ' (' || r.amount || ')';
+    if tg_op = 'UPDATE' then
+      -- ignore bookkeeping columns when diffing
+      select jsonb_object_agg(n.key, jsonb_build_array(o.value, n.value)) into diff
+      from jsonb_each(to_jsonb(new)) n
+      join jsonb_each(to_jsonb(old)) o using (key)
+      where n.value is distinct from o.value and n.key <> 'updated_at';
+    end if;
+  else
+    summ := 'payment ' || r.amount;
+  end if;
+
+  insert into audit_log (group_id, actor_id, action, entity, entity_id, summary, changes)
+  values (r.group_id, auth.uid(), act, ent, r.id, summ, diff);
+  return r;
+end $$;
+
+drop trigger if exists audit_expenses on public.expenses;
+create trigger audit_expenses after insert or update or delete on public.expenses
+  for each row execute function public.log_audit('expense');
+drop trigger if exists audit_settlements on public.settlements;
+create trigger audit_settlements after insert or delete on public.settlements
+  for each row execute function public.log_audit('settlement');
+
+alter publication supabase_realtime add table public.audit_log;
