@@ -388,3 +388,65 @@ begin
   values (a.group_id, auth.uid(), 'restored', 'expense', a.entity_id, a.summary, expense_snapshot(a.entity_id));
   return a.entity_id;
 end $$;
+
+-- migration: receipt photos (idempotent). The image lives in Cloudflare R2; only its key is stored here.
+-- Re-creates save_expense / restore_expense with receipt_key.
+alter table public.expenses add column if not exists receipt_key text;
+
+create or replace function public.save_expense(eid uuid, gid uuid, fields jsonb, splits jsonb)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  old_d jsonb;
+  new_d jsonb;
+  xid uuid := eid;
+begin
+  if not is_member(gid) then raise exception 'Not a member of this group'; end if;
+  if fields->>'receipt_key' is not null and fields->>'receipt_key' not like gid::text || '/%' then
+    raise exception 'Invalid receipt';
+  end if;
+  if xid is null then
+    insert into expenses (group_id, description, amount, paid_by, spent_on, local_amount, local_currency, fx_rate, category, receipt_key)
+    values (gid, fields->>'description', (fields->>'amount')::numeric, (fields->>'paid_by')::uuid,
+            (fields->>'spent_on')::date, (fields->>'local_amount')::numeric, fields->>'local_currency',
+            (fields->>'fx_rate')::numeric, fields->>'category', fields->>'receipt_key')
+    returning id into xid;
+  else
+    if not exists (select 1 from expenses where id = xid and group_id = gid) then
+      raise exception 'Expense not found';
+    end if;
+    old_d := expense_snapshot(xid);
+    update expenses set description = fields->>'description', amount = (fields->>'amount')::numeric,
+      paid_by = (fields->>'paid_by')::uuid, spent_on = (fields->>'spent_on')::date,
+      local_amount = (fields->>'local_amount')::numeric, local_currency = fields->>'local_currency',
+      fx_rate = (fields->>'fx_rate')::numeric, category = fields->>'category',
+      receipt_key = fields->>'receipt_key', updated_at = now()
+    where id = xid;
+    delete from expense_splits where expense_id = xid;
+  end if;
+  insert into expense_splits (expense_id, user_id, share)
+  select xid, x.user_id, x.share from jsonb_to_recordset(splits) as x(user_id uuid, share numeric);
+  new_d := expense_snapshot(xid);
+  insert into audit_log (group_id, actor_id, action, entity, entity_id, summary, details, old_details)
+  values (gid, auth.uid(), case when eid is null then 'created' else 'updated' end, 'expense', xid,
+          new_d->>'description', new_d, old_d);
+  return xid;
+end $$;
+
+create or replace function public.restore_expense(aid uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare a audit_log; d jsonb;
+begin
+  select * into a from audit_log where id = aid and entity = 'expense' and action = 'deleted';
+  if a.id is null or not is_member(a.group_id) then raise exception 'Nothing to restore'; end if;
+  if exists (select 1 from expenses where id = a.entity_id) then raise exception 'Already restored'; end if;
+  d := a.details;
+  insert into expenses (id, group_id, description, amount, paid_by, spent_on, local_amount, local_currency, fx_rate, category, receipt_key)
+  values (a.entity_id, a.group_id, d->>'description', (d->>'amount')::numeric, (d->>'paid_by')::uuid,
+          (d->>'spent_on')::date, (d->>'local_amount')::numeric, d->>'local_currency', (d->>'fx_rate')::numeric,
+          d->>'category', d->>'receipt_key');
+  insert into expense_splits (expense_id, user_id, share)
+  select a.entity_id, x.user_id, x.share from jsonb_to_recordset(d->'splits') as x(user_id uuid, share numeric);
+  insert into audit_log (group_id, actor_id, action, entity, entity_id, summary, details)
+  values (a.group_id, auth.uid(), 'restored', 'expense', a.entity_id, a.summary, expense_snapshot(a.entity_id));
+  return a.entity_id;
+end $$;

@@ -19,6 +19,7 @@ export type Expense = {
   local_currency: string | null
   fx_rate: number | null
   category: string | null
+  receipt_key: string | null
   expense_splits: { user_id: string; share: number }[]
 }
 export type Settlement = {
@@ -49,6 +50,7 @@ export type Details = {
   local_currency?: string | null
   fx_rate?: number | null
   category?: string | null
+  receipt_key?: string | null
   splits?: { user_id: string; share: number }[]
   from_user?: string
   to_user?: string

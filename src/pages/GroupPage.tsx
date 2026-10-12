@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase, type AuditEntry, type Details, type Expense, type Group, type Profile, type Settlement } from '../lib/supabase'
 import Billing from './Billing'
+import { ReceiptField, ReceiptThumb } from '../components/Receipt'
 import { fetchRate } from '../lib/fx'
 import { netBalances, simplifyDebts, splitByWeights, splitEqually } from '../lib/balances'
 
@@ -319,6 +320,7 @@ function ExpenseDetail(p: {
           <div>Added by {added ? who(added) : 'unknown'} on {day(added?.created_at ?? e.created_at)}</div>
           {updated && <div>Updated by {who(updated)} on {day(updated.created_at)}</div>}
         </div>
+        {e.receipt_key && <ReceiptThumb k={e.receipt_key} className="receiptFull" />}
         <div className="paidTree">
           <div><b>{p.name(e.paid_by)}</b> paid {money(e.amount)}</div>
           {others.map((s) => (
@@ -376,9 +378,10 @@ function Changes({ before, after, name, cur }: { before: Details; after: Details
     if (k === 'splits') return (d.splits ?? []).map((s) => `${name(s.user_id)} ${s.share.toFixed(2)}`).join(', ')
     const v = d[k as keyof Details]
     if (v == null) return '–'
+    if (k === 'receipt_key') return v ? 'attached' : '–'
     return k === 'paid_by' ? name(String(v)) : k === 'amount' ? `${Number(v).toFixed(2)} ${cur}` : String(v)
   }
-  const keys = ['description', 'amount', 'paid_by', 'spent_on', 'local_amount', 'local_currency', 'fx_rate', 'category', 'splits']
+  const keys = ['description', 'amount', 'paid_by', 'spent_on', 'local_amount', 'local_currency', 'fx_rate', 'category', 'receipt_key', 'splits']
   const diff = keys.filter((k) => show(k, before) !== show(k, after))
   return (
     <div className="small muted">
@@ -410,6 +413,7 @@ function ExpenseForm(p: {
   const [paidBy, setPaidBy] = useState(ex?.paid_by ?? p.userId)
   const [category, setCategory] = useState<string | null>(ex?.category ?? null)
   const [advanced, setAdvanced] = useState(!!ex?.category)
+  const [receipt, setReceipt] = useState<string | null>(ex?.receipt_key ?? null)
   const dateRef = useRef<HTMLInputElement>(null)
   // stored splits are in the settlement currency: exact amounts if unconverted, else proportional weights
   const [mode, setMode] = useState<SplitMode>(ex ? (exForeign ? 'shares' : 'exact') : 'equal')
@@ -487,6 +491,7 @@ function ExpenseForm(p: {
         local_currency: entryCur,
         fx_rate: foreign ? fxRate : 1,
         category,
+        receipt_key: receipt,
       }
       const { error } = await supabase.rpc('save_expense', { eid: ex?.id ?? null, gid: p.group.id, fields: row, splits })
       if (error) throw error
@@ -573,6 +578,7 @@ function ExpenseForm(p: {
             )}
           </div>
         ))}
+        <ReceiptField groupId={p.group.id} value={receipt} onChange={setReceipt} />
         <button type="button" className="link" onClick={() => setAdvanced(!advanced)}>{advanced ? '▾' : '▸'} Advanced</button>
         {advanced && (
           <div className="cats">

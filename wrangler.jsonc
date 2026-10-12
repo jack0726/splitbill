@@ -1,8 +1,17 @@
 {
   "name": "splitbill",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-10-01",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "r2_buckets": [{ "binding": "RECEIPTS", "bucket_name": "splitbill-receipts" }],
+  // public values (same as the VITE_ ones): fill in your Supabase project URL and anon key
+  "vars": {
+    "SUPABASE_URL": "https://YOUR-PROJECT.supabase.co",
+    "SUPABASE_ANON_KEY": "YOUR-ANON-KEY"
   }
 }
