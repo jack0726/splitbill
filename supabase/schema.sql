@@ -224,3 +224,105 @@ create trigger audit_settlements after insert or delete on public.settlements
   for each row execute function public.log_audit('settlement');
 
 alter publication supabase_realtime add table public.audit_log;
+
+-- migration: full-detail audit log (idempotent). Supersedes the log_audit triggers above.
+alter table public.audit_log add column if not exists details jsonb;      -- state after (or before, for deletes)
+alter table public.audit_log add column if not exists old_details jsonb;  -- state before, for updates
+
+drop trigger if exists audit_expenses on public.expenses;
+drop trigger if exists audit_settlements on public.settlements;
+drop function if exists public.log_audit();
+
+create or replace function public.expense_snapshot(eid uuid)
+returns jsonb language sql stable set search_path = public as $$
+  select to_jsonb(e) - 'created_by' - 'created_at' - 'updated_at'
+    || jsonb_build_object('splits', coalesce((
+         select jsonb_agg(jsonb_build_object('user_id', s.user_id, 'share', s.share))
+         from expense_splits s where s.expense_id = e.id), '[]'::jsonb))
+  from expenses e where e.id = eid;
+$$;
+
+-- create (eid null) or edit an expense with its splits in one transaction, and log it
+create or replace function public.save_expense(eid uuid, gid uuid, fields jsonb, splits jsonb)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  old_d jsonb;
+  new_d jsonb;
+  xid uuid := eid;
+begin
+  if not is_member(gid) then raise exception 'Not a member of this group'; end if;
+  if xid is null then
+    insert into expenses (group_id, description, amount, paid_by, spent_on, local_amount, local_currency, fx_rate)
+    values (gid, fields->>'description', (fields->>'amount')::numeric, (fields->>'paid_by')::uuid,
+            (fields->>'spent_on')::date, (fields->>'local_amount')::numeric, fields->>'local_currency',
+            (fields->>'fx_rate')::numeric)
+    returning id into xid;
+  else
+    if not exists (select 1 from expenses where id = xid and group_id = gid) then
+      raise exception 'Expense not found';
+    end if;
+    old_d := expense_snapshot(xid);
+    update expenses set description = fields->>'description', amount = (fields->>'amount')::numeric,
+      paid_by = (fields->>'paid_by')::uuid, spent_on = (fields->>'spent_on')::date,
+      local_amount = (fields->>'local_amount')::numeric, local_currency = fields->>'local_currency',
+      fx_rate = (fields->>'fx_rate')::numeric, updated_at = now()
+    where id = xid;
+    delete from expense_splits where expense_id = xid;
+  end if;
+  insert into expense_splits (expense_id, user_id, share)
+  select xid, x.user_id, x.share from jsonb_to_recordset(splits) as x(user_id uuid, share numeric);
+  new_d := expense_snapshot(xid);
+  insert into audit_log (group_id, actor_id, action, entity, entity_id, summary, details, old_details)
+  values (gid, auth.uid(), case when eid is null then 'created' else 'updated' end, 'expense', xid,
+          new_d->>'description', new_d, old_d);
+  return xid;
+end $$;
+
+-- log deletes with a snapshot taken before the splits cascade away
+create or replace function public.log_expense_delete()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  insert into audit_log (group_id, actor_id, action, entity, entity_id, summary, details)
+  values (old.group_id, auth.uid(), 'deleted', 'expense', old.id, old.description, expense_snapshot(old.id));
+  return old;
+end $$;
+drop trigger if exists audit_expense_delete on public.expenses;
+create trigger audit_expense_delete before delete on public.expenses
+  for each row execute function public.log_expense_delete();
+
+create or replace function public.log_settlement()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare r settlements;
+begin
+  if tg_op = 'DELETE' then r := old; else r := new; end if;
+  insert into audit_log (group_id, actor_id, action, entity, entity_id, summary, details)
+  values (r.group_id, auth.uid(), case tg_op when 'DELETE' then 'deleted' else 'created' end, 'settlement',
+          r.id, 'payment ' || r.amount, jsonb_build_object('from_user', r.from_user, 'to_user', r.to_user, 'amount', r.amount));
+  return r;
+end $$;
+drop trigger if exists audit_settlements on public.settlements;
+create trigger audit_settlements after insert or delete on public.settlements
+  for each row execute function public.log_settlement();
+
+-- undo an accidental delete: re-create the expense (same id) from its audit snapshot
+alter table public.audit_log drop constraint if exists audit_log_action_check;
+alter table public.audit_log add constraint audit_log_action_check
+  check (action in ('created', 'updated', 'deleted', 'restored'));
+
+create or replace function public.restore_expense(aid uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare a audit_log; d jsonb;
+begin
+  select * into a from audit_log where id = aid and entity = 'expense' and action = 'deleted';
+  if a.id is null or not is_member(a.group_id) then raise exception 'Nothing to restore'; end if;
+  if exists (select 1 from expenses where id = a.entity_id) then raise exception 'Already restored'; end if;
+  d := a.details;
+  insert into expenses (id, group_id, description, amount, paid_by, spent_on, local_amount, local_currency, fx_rate)
+  values (a.entity_id, a.group_id, d->>'description', (d->>'amount')::numeric, (d->>'paid_by')::uuid,
+          (d->>'spent_on')::date, (d->>'local_amount')::numeric, d->>'local_currency', (d->>'fx_rate')::numeric);
+  insert into expense_splits (expense_id, user_id, share)
+  select a.entity_id, x.user_id, x.share from jsonb_to_recordset(d->'splits') as x(user_id uuid, share numeric);
+  insert into audit_log (group_id, actor_id, action, entity, entity_id, summary, details)
+  values (a.group_id, auth.uid(), 'restored', 'expense', a.entity_id, a.summary, expense_snapshot(a.entity_id));
+  return a.entity_id;
+end $$;

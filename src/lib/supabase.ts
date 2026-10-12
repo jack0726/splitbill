@@ -14,6 +14,7 @@ export type Expense = {
   amount: number
   paid_by: string
   spent_on: string
+  created_at: string
   local_amount: number | null
   local_currency: string | null
   fx_rate: number | null
@@ -30,9 +31,23 @@ export type Settlement = {
 export type AuditEntry = {
   id: string
   actor_id: string | null
-  action: 'created' | 'updated' | 'deleted'
+  action: 'created' | 'updated' | 'deleted' | 'restored'
   entity: 'expense' | 'settlement'
+  entity_id: string
   summary: string
-  changes: Record<string, [unknown, unknown]> | null
+  details: Details | null
+  old_details: Details | null
   created_at: string
+}
+export type Details = {
+  description?: string
+  amount: number
+  paid_by?: string
+  spent_on?: string
+  local_amount?: number | null
+  local_currency?: string | null
+  fx_rate?: number | null
+  splits?: { user_id: string; share: number }[]
+  from_user?: string
+  to_user?: string
 }

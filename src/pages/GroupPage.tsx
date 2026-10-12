@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { supabase, type AuditEntry, type Expense, type Group, type Profile, type Settlement } from '../lib/supabase'
+import { supabase, type AuditEntry, type Details, type Expense, type Group, type Profile, type Settlement } from '../lib/supabase'
 import { fetchRate } from '../lib/fx'
 import { netBalances, simplifyDebts, splitByWeights, splitEqually } from '../lib/balances'
 
@@ -14,6 +14,9 @@ export default function GroupPage({ userId }: { userId: string }) {
   const [settlements, setSettlements] = useState<Settlement[]>([])
   const [tab, setTab] = useState<'expenses' | 'balances' | 'history'>('expenses')
   const [audit, setAudit] = useState<AuditEntry[]>([])
+  const [payer, setPayer] = useState('')
+  const [newestFirst, setNewestFirst] = useState(true)
+  const [query, setQuery] = useState('')
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Expense | null>(null)
 
@@ -60,11 +63,20 @@ export default function GroupPage({ userId }: { userId: string }) {
     load()
   }
   async function remove(eid: string) {
-    if (confirm('Delete this expense?')) {
-      await supabase.from('expenses').delete().eq('id', eid)
-      load()
-    }
+    if (!confirm('Delete this expense?')) return
+    await supabase.from('expenses').delete().eq('id', eid)
+    setEditing(null)
+    load()
   }
+  async function restore(aid: string) {
+    const { error } = await supabase.rpc('restore_expense', { aid })
+    if (error) alert(error.message)
+    load()
+  }
+  // transaction date, then the time it was entered
+  const shown = expenses
+    .filter((e) => (!payer || e.paid_by === payer) && e.description.toLowerCase().includes(query.trim().toLowerCase()))
+    .sort((a, b) => (a.spent_on + a.created_at).localeCompare(b.spent_on + b.created_at) * (newestFirst ? -1 : 1))
 
   return (
     <>
@@ -92,14 +104,28 @@ export default function GroupPage({ userId }: { userId: string }) {
         <>
           <button className="fab" onClick={() => setAdding(true)}>+ Add expense</button>
           {expenses.length === 0 && <p className="muted">No expenses yet.</p>}
-          {expenses.map((e) => {
+          {expenses.length > 0 && (
+            <div className="row">
+              <input placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} />
+              <select value={payer} onChange={(e) => setPayer(e.target.value)}>
+                <option value="">Paid by: anyone</option>
+                {members.map((m) => <option key={m.id} value={m.id}>{name(m.id)}</option>)}
+              </select>
+              <select value={newestFirst ? 'desc' : 'asc'} onChange={(e) => setNewestFirst(e.target.value === 'desc')}>
+                <option value="desc">Newest first</option>
+                <option value="asc">Oldest first</option>
+              </select>
+            </div>
+          )}
+          {expenses.length > 0 && shown.length === 0 && <p className="muted">No matching expenses.</p>}
+          {shown.map((e) => {
             const myShare = e.expense_splits.find((s) => s.user_id === userId)?.share ?? 0
             return (
-              <div key={e.id} className="card row">
+              <div key={e.id} className="card row clickable" onClick={() => setEditing(e)}>
                 <div>
                   <strong>{e.description}</strong>
                   <div className="muted small">
-                    {name(e.paid_by)} paid {money(e.amount)} · {e.spent_on}
+                    {name(e.paid_by)} paid {money(e.amount)} · {shortDate(e.spent_on)} {new Date(e.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     {e.local_amount != null && e.local_currency !== group.currency && (
                       <> · {e.local_amount.toFixed(2)} {e.local_currency} @ {e.fx_rate}</>
                     )}
@@ -108,8 +134,6 @@ export default function GroupPage({ userId }: { userId: string }) {
                 <div className="right">
                   <div className="small muted">your share</div>
                   <div>{money(myShare)}</div>
-                  <button className="link" onClick={() => setEditing(e)}>edit</button>
-                  <button className="link danger" onClick={() => remove(e.id)}>delete</button>
                 </div>
               </div>
             )
@@ -154,21 +178,19 @@ export default function GroupPage({ userId }: { userId: string }) {
         <>
           {audit.length === 0 && <p className="muted">No activity recorded yet.</p>}
           {audit.map((a) => {
-            const changed = Object.entries(a.changes ?? {})
+            const canRestore = a.entity === 'expense' && a.action === 'deleted' && !expenses.some((e) => e.id === a.entity_id)
             return (
               <div key={a.id} className="card">
                 <div className="small muted">{new Date(a.created_at).toLocaleString()}</div>
                 <div>
-                  <b>{a.actor_id ? name(a.actor_id) : 'Someone'}</b> {a.action} {a.entity === 'expense' ? 'expense' : ''} <b>{a.summary}</b>
+                  <b>{a.actor_id ? name(a.actor_id) : 'Someone'}</b> {a.action} {a.entity === 'expense' ? 'expense' : 'a'} <b>{a.summary}</b>
                 </div>
-                {a.action === 'updated' && (
-                  <div className="small muted">
-                    {changed.length === 0 && 'split changed'}
-                    {changed.map(([k, [o, n]]) => (
-                      <div key={k}>{k}: {fmtVal(k, o, name)} → {fmtVal(k, n, name)}</div>
-                    ))}
-                  </div>
+                {a.details && a.action === 'updated' && a.old_details ? (
+                  <Changes before={a.old_details} after={a.details} name={name} cur={group.currency} />
+                ) : (
+                  a.details && <Snapshot d={a.details} name={name} cur={group.currency} />
                 )}
+                {canRestore && a.details && <button onClick={() => restore(a.id)}>Restore this expense</button>}
               </div>
             )
           })}
@@ -181,6 +203,7 @@ export default function GroupPage({ userId }: { userId: string }) {
           members={members}
           userId={userId}
           expense={editing}
+          onDelete={editing ? () => remove(editing.id) : undefined}
           onClose={() => { setAdding(false); setEditing(null) }}
           onSaved={() => { setAdding(false); setEditing(null); load() }}
         />
@@ -189,9 +212,46 @@ export default function GroupPage({ userId }: { userId: string }) {
   )
 }
 
-function fmtVal(key: string, v: unknown, name: (id: string) => string) {
-  if (v == null) return '–'
-  return key === 'paid_by' ? name(String(v)) : String(v)
+type NameFn = (id: string) => string
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+// 'YYYY-MM-DD' -> 'DD-Mon'
+const shortDate = (d: string) => `${d.slice(8, 10)}-${MONTHS[Number(d.slice(5, 7)) - 1]}`
+
+function Snapshot({ d, name, cur }: { d: Details; name: NameFn; cur: string }) {
+  if (d.from_user) return <div className="small muted">{name(d.from_user)} → {name(d.to_user!)}: {d.amount.toFixed(2)} {cur}</div>
+  return (
+    <div className="small muted">
+      <div>
+        {d.amount.toFixed(2)} {cur}
+        {d.local_amount != null && d.local_currency !== cur && <> ({d.local_amount.toFixed(2)} {d.local_currency} @ {d.fx_rate})</>}
+        {d.spent_on && <> · {d.spent_on}</>}
+      </div>
+      {d.paid_by && <div>Paid by {name(d.paid_by)}</div>}
+      {d.splits && d.splits.length > 0 && (
+        <div>Shared: {d.splits.map((s) => `${name(s.user_id)} ${s.share.toFixed(2)}`).join(', ')}</div>
+      )}
+    </div>
+  )
+}
+
+function Changes({ before, after, name, cur }: { before: Details; after: Details; name: NameFn; cur: string }) {
+  const show = (k: string, d: Details): string => {
+    if (k === 'splits') return (d.splits ?? []).map((s) => `${name(s.user_id)} ${s.share.toFixed(2)}`).join(', ')
+    const v = d[k as keyof Details]
+    if (v == null) return '–'
+    return k === 'paid_by' ? name(String(v)) : k === 'amount' ? `${Number(v).toFixed(2)} ${cur}` : String(v)
+  }
+  const keys = ['description', 'amount', 'paid_by', 'spent_on', 'local_amount', 'local_currency', 'fx_rate', 'splits']
+  const diff = keys.filter((k) => show(k, before) !== show(k, after))
+  return (
+    <div className="small muted">
+      {diff.length === 0 && 'No visible changes'}
+      {diff.map((k) => (
+        <div key={k}>{k === 'splits' ? 'shared' : k}: {show(k, before)} → {show(k, after)}</div>
+      ))}
+    </div>
+  )
 }
 
 function ExpenseForm(p: {
@@ -199,6 +259,7 @@ function ExpenseForm(p: {
   members: Profile[]
   userId: string
   expense: Expense | null
+  onDelete?: () => void
   onClose: () => void
   onSaved: () => void
 }) {
@@ -287,34 +348,8 @@ function ExpenseForm(p: {
         local_currency: entryCur,
         fx_rate: foreign ? fxRate : 1,
       }
-      if (ex) {
-        const { error } = await supabase
-          .from('expenses')
-          .update({ ...row, updated_at: new Date().toISOString() })
-          .eq('id', ex.id)
-        if (error) throw error
-        const { error: e1 } = await supabase.from('expense_splits').delete().eq('expense_id', ex.id)
-        if (e1) throw e1
-        const { error: e2 } = await supabase
-          .from('expense_splits')
-          .insert(splits.map((s) => ({ ...s, expense_id: ex.id })))
-        if (e2) throw e2
-        p.onSaved()
-        return
-      }
-      const { data, error } = await supabase
-        .from('expenses')
-        .insert({ ...row, group_id: p.group.id })
-        .select('id')
-        .single()
+      const { error } = await supabase.rpc('save_expense', { eid: ex?.id ?? null, gid: p.group.id, fields: row, splits })
       if (error) throw error
-      const { error: e2 } = await supabase
-        .from('expense_splits')
-        .insert(splits.map((s) => ({ ...s, expense_id: data.id })))
-      if (e2) {
-        await supabase.from('expenses').delete().eq('id', data.id)
-        throw e2
-      }
       p.onSaved()
     } catch (x) {
       setErr((x as Error).message)
@@ -396,6 +431,7 @@ function ExpenseForm(p: {
         {err && <p className="error">{err}</p>}
         <div className="row">
           <button type="button" className="link" onClick={p.onClose}>Cancel</button>
+          {p.onDelete && <button type="button" className="link danger" onClick={p.onDelete}>Delete</button>}
           <button>Save</button>
         </div>
       </form>

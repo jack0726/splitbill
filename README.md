@@ -11,7 +11,7 @@ A free, self-hosted Splitwise-style app for splitting expenses with friends. Ins
 - Expenses split equally, by exact amounts, percentages or shares
 - Net balances and simplified "who owes who" payments
 - Settle up (records a payment)
-- Edit any expense (tap *edit*); a **History** tab shows a timestamped audit log of who created, changed or deleted expenses and payments (written by database triggers, so it can't be skipped by the client)
+- Filter expenses by payer or text; tap an expense row to edit it (delete is inside the edit view); a **History** tab shows a timestamped audit log of who created, changed or deleted expenses and payments, with full details (amount, payer, who shared what, before → after for edits), and deleted expenses can be restored from there
 - Local vs settlement currency (both default to SGD): per expense, enter the amount in the trip's local currency (converted at a live FX rate, with an opt-in "Override rate" checkbox; rounded to 2 dp) or directly in the settlement currency
 - Realtime updates across members' devices
 - Installable PWA, works with light/dark mode

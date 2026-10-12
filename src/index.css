@@ -47,3 +47,4 @@ label.check input { width: auto; }
 .fab { position: fixed; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 5; padding: 14px 20px; border-radius: 999px; box-shadow: 0 4px 12px rgba(0, 0, 0, .25); }
 .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); display: flex; align-items: flex-end; justify-content: center; z-index: 10; }
 .sheet { width: 100%; max-width: 560px; max-height: 92vh; overflow: auto; border-radius: 16px 16px 0 0; margin: 0; }
+.clickable { cursor: pointer; }
