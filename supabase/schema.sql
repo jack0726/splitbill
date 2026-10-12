@@ -9,7 +9,8 @@ create table public.profiles (
 create table public.groups (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  currency text not null default 'NOK',
+  currency text not null default 'SGD',        -- settlement currency
+  local_currency text not null default 'SGD',  -- currency spent while travelling
   invite_code text not null unique default substr(md5(random()::text), 1, 8),
   created_by uuid not null references public.profiles(id) default auth.uid(),
   created_at timestamptz not null default now()
@@ -30,6 +31,10 @@ create table public.expenses (
   paid_by uuid not null references public.profiles(id),
   created_by uuid not null references public.profiles(id) default auth.uid(),
   spent_on date not null default current_date,
+  -- amount/splits are always in the group's settlement currency; these keep the original entry
+  local_amount numeric(12,2),
+  local_currency text,
+  fx_rate numeric(18,8),  -- settlement units per 1 local unit
   created_at timestamptz not null default now()
 );
 
@@ -150,3 +155,10 @@ insert into public.profiles (id, name)
 select id, coalesce(raw_user_meta_data->>'name', split_part(email, '@', 1))
 from auth.users
 on conflict (id) do nothing;
+
+-- migration for databases created before local/settlement currencies existed
+alter table public.groups add column if not exists local_currency text not null default 'SGD';
+alter table public.groups alter column currency set default 'SGD';
+alter table public.expenses add column if not exists local_amount numeric(12,2);
+alter table public.expenses add column if not exists local_currency text;
+alter table public.expenses add column if not exists fx_rate numeric(18,8);

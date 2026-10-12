@@ -11,6 +11,7 @@ A free, self-hosted Splitwise-style app for splitting expenses with friends. Ins
 - Expenses split equally, by exact amounts, percentages or shares
 - Net balances and simplified "who owes who" payments
 - Settle up (records a payment)
+- Local vs settlement currency (both default to SGD): per expense, enter the amount in the trip's local currency (converted at a live FX rate, with an opt-in "Override rate" checkbox; rounded to 2 dp) or directly in the settlement currency
 - Realtime updates across members' devices
 - Installable PWA, works with light/dark mode
 
@@ -44,12 +45,15 @@ private npm mirror makes Cloudflare builds fail with `403`.
 
 - `supabase/schema.sql`: tables, row-level security, invite/join function
 - `src/lib/balances.ts`: balance, debt simplification and split math
+- `src/lib/fx.ts`: live FX rate lookup (frankfurter.app, no key)
 - `src/pages/`: Auth, Groups, GroupPage (expenses, balances, add expense), Join
 
 ## Notes
 
 - The free Supabase tier pauses a project after 7 days of inactivity; resume it from the dashboard.
 - Amounts are handled in cents to avoid rounding errors.
+- Expense amounts and splits are always stored in the settlement currency; the original local amount and FX rate are kept on the expense.
+- Existing databases: re-run the migration block at the bottom of `supabase/schema.sql`.
 
 ## Status / TODO
 

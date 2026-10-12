@@ -5,7 +5,8 @@ import { supabase, type Group } from '../lib/supabase'
 export default function Groups() {
   const [groups, setGroups] = useState<Group[]>([])
   const [name, setName] = useState('')
-  const [currency, setCurrency] = useState('NOK')
+  const [currency, setCurrency] = useState('SGD')
+  const [localCurrency, setLocalCurrency] = useState('SGD')
   const [code, setCode] = useState('')
   const [err, setErr] = useState('')
   const nav = useNavigate()
@@ -18,7 +19,7 @@ export default function Groups() {
 
   async function create(e: React.FormEvent) {
     e.preventDefault()
-    const { data, error } = await supabase.from('groups').insert({ name, currency }).select().single()
+    const { data, error } = await supabase.from('groups').insert({ name, currency, local_currency: localCurrency }).select().single()
     if (error) return setErr(error.message)
     nav(`/g/${data.id}`)
   }
@@ -37,14 +38,19 @@ export default function Groups() {
       {groups.map((g) => (
         <Link key={g.id} to={`/g/${g.id}`} className="card row">
           <strong>{g.name}</strong>
-          <span className="muted">{g.currency}</span>
+          <span className="muted">{g.local_currency !== g.currency ? `${g.local_currency} → ${g.currency}` : g.currency}</span>
         </Link>
       ))}
 
       <form className="card" onSubmit={create}>
         <h3>New group</h3>
         <input placeholder="Group name (e.g. Trip to Bergen)" value={name} onChange={(e) => setName(e.target.value)} required />
-        <input placeholder="Currency" value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} required />
+        <label>Settlement currency
+          <input placeholder="SGD" value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required />
+        </label>
+        <label>Local currency (spent while travelling)
+          <input placeholder="SGD" value={localCurrency} onChange={(e) => setLocalCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required />
+        </label>
         <button>Create group</button>
       </form>
 

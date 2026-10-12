@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase, type Expense, type Group, type Profile, type Settlement } from '../lib/supabase'
+import { fetchRate } from '../lib/fx'
 import { netBalances, simplifyDebts, splitByWeights, splitEqually } from '../lib/balances'
 
 type SplitMode = 'equal' | 'exact' | 'percent' | 'shares'
@@ -92,7 +93,12 @@ export default function GroupPage({ userId }: { userId: string }) {
               <div key={e.id} className="card row">
                 <div>
                   <strong>{e.description}</strong>
-                  <div className="muted small">{name(e.paid_by)} paid {money(e.amount)} · {e.spent_on}</div>
+                  <div className="muted small">
+                    {name(e.paid_by)} paid {money(e.amount)} · {e.spent_on}
+                    {e.local_amount != null && e.local_currency !== group.currency && (
+                      <> · {e.local_amount.toFixed(2)} {e.local_currency} @ {e.fx_rate}</>
+                    )}
+                  </div>
                 </div>
                 <div className="right">
                   <div className="small muted">your share</div>
@@ -140,7 +146,7 @@ export default function GroupPage({ userId }: { userId: string }) {
 
       {adding && (
         <AddExpense
-          groupId={group.id}
+          group={group}
           members={members}
           userId={userId}
           onClose={() => setAdding(false)}
@@ -152,7 +158,7 @@ export default function GroupPage({ userId }: { userId: string }) {
 }
 
 function AddExpense(p: {
-  groupId: string
+  group: Group
   members: Profile[]
   userId: string
   onClose: () => void
@@ -167,7 +173,34 @@ function AddExpense(p: {
   const [vals, setVals] = useState<Record<string, string>>({})
   const [err, setErr] = useState('')
 
+  const settleCur = p.group.currency
+  const hasFx = p.group.local_currency !== settleCur
+  // 'local' = amount typed in the trip's local currency and converted via FX; 'settlement' = no conversion
+  const [entry, setEntry] = useState<'local' | 'settlement'>(hasFx ? 'local' : 'settlement')
+  const [liveRate, setLiveRate] = useState<number | null>(null)
+  const [manualRate, setManualRate] = useState('')
+  const [override, setOverride] = useState(false)
+  const [rateLoading, setRateLoading] = useState(false)
+  const foreign = hasFx && entry === 'local'
+  const entryCur = foreign ? p.group.local_currency : settleCur
+
+  useEffect(() => {
+    if (!foreign) return
+    let live = true
+    setRateLoading(true)
+    fetchRate(p.group.local_currency, settleCur).then((r) => {
+      if (!live) return
+      setLiveRate(r)
+      setRateLoading(false)
+    })
+    return () => { live = false }
+  }, [foreign, p.group.local_currency, settleCur])
+
   const total = parseFloat(amount) || 0
+  // manual entry is opt-in, but forced when no live rate could be fetched
+  const manual = override || (!rateLoading && liveRate === null)
+  const fxRate = manual ? parseFloat(manualRate) || 0 : liveRate ?? 0
+  const settleTotal = foreign ? Math.round(total * fxRate * 100) / 100 : total
 
   function buildSplits() {
     const ids = p.members.filter((m) => included[m.id]).map((m) => m.id)
@@ -176,7 +209,7 @@ function AddExpense(p: {
     const nums = Object.fromEntries(ids.map((i) => [i, parseFloat(vals[i]) || 0]))
     if (mode === 'exact') {
       const sum = ids.reduce((a, i) => a + nums[i], 0)
-      if (Math.abs(sum - total) > 0.005) throw new Error(`Amounts add up to ${sum.toFixed(2)}, expected ${total.toFixed(2)}`)
+      if (Math.abs(sum - total) > 0.005) throw new Error(`Amounts add up to ${sum.toFixed(2)}, expected ${total.toFixed(2)} ${entryCur}`)
       return ids.map((i) => ({ user_id: i, share: nums[i] }))
     }
     if (mode === 'percent') {
@@ -192,10 +225,25 @@ function AddExpense(p: {
     setErr('')
     try {
       if (total <= 0) throw new Error('Enter an amount')
-      const splits = buildSplits()
+      if (foreign && fxRate <= 0) throw new Error('Enter an FX rate')
+      if (settleTotal <= 0) throw new Error('Converted amount is too small')
+      let splits = buildSplits()
+      // splits are entered in the entry currency; store them in the settlement currency
+      if (foreign) {
+        splits = splitByWeights(settleTotal, Object.fromEntries(splits.map((s) => [s.user_id, s.share])))
+      }
       const { data, error } = await supabase
         .from('expenses')
-        .insert({ group_id: p.groupId, description: desc, amount: total, paid_by: paidBy, spent_on: date })
+        .insert({
+          group_id: p.group.id,
+          description: desc,
+          amount: settleTotal,
+          paid_by: paidBy,
+          spent_on: date,
+          local_amount: total,
+          local_currency: entryCur,
+          fx_rate: foreign ? fxRate : 1,
+        })
         .select('id')
         .single()
       if (error) throw error
@@ -219,7 +267,43 @@ function AddExpense(p: {
       <form className="card sheet" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <h3>Add expense</h3>
         <input placeholder="Description" value={desc} onChange={(e) => setDesc(e.target.value)} required />
-        <input type="number" step="0.01" min="0" inputMode="decimal" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+        {hasFx && (
+          <label>Currency
+            <select value={entry} onChange={(e) => setEntry(e.target.value as 'local' | 'settlement')}>
+              <option value="local">Local – {p.group.local_currency} (convert to {settleCur})</option>
+              <option value="settlement">Settlement – {settleCur}</option>
+            </select>
+          </label>
+        )}
+        <input type="number" step="0.01" min="0" inputMode="decimal" placeholder={`Amount (${entryCur})`} value={amount} onChange={(e) => setAmount(e.target.value)} required />
+        {foreign && (
+          <div>
+            <label>FX rate (1 {entryCur} = ? {settleCur})
+              <input
+                type="number" step="any" min="0" inputMode="decimal"
+                placeholder={rateLoading ? 'Fetching rate…' : 'Enter rate'}
+                value={manual ? manualRate : liveRate ?? ''}
+                readOnly={!manual}
+                onChange={(e) => setManualRate(e.target.value)}
+                required
+              />
+            </label>
+            {liveRate !== null && (
+              <label className="check">
+                <input
+                  type="checkbox" checked={override}
+                  onChange={(e) => {
+                    setOverride(e.target.checked)
+                    if (e.target.checked && !manualRate) setManualRate(String(liveRate))
+                  }}
+                />
+                Override rate
+              </label>
+            )}
+            {!rateLoading && liveRate === null && <small className="muted">Live rate unavailable, enter it manually.</small>}
+            {settleTotal > 0 && <small className="muted">≈ {settleTotal.toFixed(2)} {settleCur}</small>}
+          </div>
+        )}
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
         <label>Paid by
           <select value={paidBy} onChange={(e) => setPaidBy(e.target.value)}>
