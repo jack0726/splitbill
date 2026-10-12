@@ -31,7 +31,7 @@ export default function App() {
       </header>
       <main>
         <Routes>
-          <Route path="/" element={<Groups />} />
+          <Route path="/" element={<Groups userId={session.user.id} />} />
           <Route path="/g/:id" element={<GroupPage userId={session.user.id} />} />
           <Route path="/join/:code" element={<Join />} />
         </Routes>

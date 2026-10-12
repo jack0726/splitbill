@@ -19,6 +19,7 @@ export default function GroupPage({ userId }: { userId: string }) {
   const [query, setQuery] = useState('')
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Expense | null>(null)
+  const [viewing, setViewing] = useState<Expense | null>(null)
 
   const load = useCallback(async () => {
     const [g, m, e, s, a] = await Promise.all([
@@ -62,6 +63,12 @@ export default function GroupPage({ userId }: { userId: string }) {
     await supabase.from('settlements').insert({ group_id: id, from_user: from, to_user: to, amount })
     load()
   }
+  async function revertPayment(s: Settlement) {
+    if (!confirm(`Revert payment: ${name(s.from_user)} paid ${name(s.to_user)} ${money(s.amount)}?`)) return
+    const { error } = await supabase.from('settlements').delete().eq('id', s.id)
+    if (error) alert(error.message)
+    load()
+  }
   async function remove(eid: string) {
     if (!confirm('Delete this expense?')) return
     await supabase.from('expenses').delete().eq('id', eid)
@@ -81,9 +88,15 @@ export default function GroupPage({ userId }: { userId: string }) {
   return (
     <>
       <h2>{group.name}</h2>
-      <div className={`card summary ${mine >= 0 ? 'pos' : 'neg'}`}>
-        {Math.abs(mine) < 0.005 ? 'You are settled up' : mine > 0 ? `You are owed ${money(mine)}` : `You owe ${money(-mine)}`}
+      <div className={`overallLine ${mine >= 0 ? 'posText' : 'owe'}`}>
+        {Math.abs(mine) < 0.005 ? 'You are settled up' : mine > 0 ? `You are owed ${money(mine)} overall` : `You owe ${money(-mine)} overall`}
       </div>
+      {transfers.filter((t) => t.from === userId || t.to === userId).map((t, i) => (
+        <div key={i} className="muted">
+          {t.to === userId ? `${name(t.from)} owes you` : `You owe ${name(t.to)}`}{' '}
+          <span className={t.to === userId ? 'posText' : 'owe'}>{money(t.amount)}</span>
+        </div>
+      ))}
 
       <div className="card">
         <small className="muted">Invite friends: share this link or code <b>{group.invite_code}</b></small>
@@ -94,7 +107,8 @@ export default function GroupPage({ userId }: { userId: string }) {
         <small className="muted">Members: {members.map((m) => m.name).join(', ')}</small>
       </div>
 
-      <div className="tabs">
+      <div className="chips">
+        <button className="settleBtn" onClick={() => setTab('balances')}>Settle up</button>
         <button className={tab === 'expenses' ? 'on' : ''} onClick={() => setTab('expenses')}>Expenses</button>
         <button className={tab === 'balances' ? 'on' : ''} onClick={() => setTab('balances')}>Balances</button>
         <button className={tab === 'history' ? 'on' : ''} onClick={() => setTab('history')}>History</button>
@@ -118,22 +132,42 @@ export default function GroupPage({ userId }: { userId: string }) {
             </div>
           )}
           {expenses.length > 0 && shown.length === 0 && <p className="muted">No matching expenses.</p>}
-          {shown.map((e) => {
+          {shown.map((e, i) => {
             const myShare = e.expense_splits.find((s) => s.user_id === userId)?.share ?? 0
+            // what this expense does to my balance: lent if I paid, borrowed if someone else did
+            const delta = e.paid_by === userId ? e.amount - myShare : -myShare
+            const month = e.spent_on.slice(0, 7)
+            const newMonth = i === 0 || shown[i - 1].spent_on.slice(0, 7) !== month
             return (
-              <div key={e.id} className="card row clickable" onClick={() => setEditing(e)}>
-                <div>
-                  <strong>{e.description}</strong>
-                  <div className="muted small">
-                    {name(e.paid_by)} paid {money(e.amount)} · {shortDate(e.spent_on)} {new Date(e.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    {e.local_amount != null && e.local_currency !== group.currency && (
-                      <> · {e.local_amount.toFixed(2)} {e.local_currency} @ {e.fx_rate}</>
+              <div key={e.id}>
+                {newMonth && <div className="month">{MONTHS[Number(month.slice(5)) - 1]} {month.slice(0, 4)}</div>}
+                <div className="exp clickable" onClick={() => setViewing(e)}>
+                  <div className="date">
+                    <span>{MONTHS[Number(e.spent_on.slice(5, 7)) - 1]}</span>
+                    <span className="day">{e.spent_on.slice(8, 10)}</span>
+                  </div>
+                  <div className="tile" style={{ background: `hsl(${hue(e.description)} 60% 88%)`, color: `hsl(${hue(e.description)} 45% 30%)` }}>
+                    {e.description.trim().charAt(0).toUpperCase()}
+                  </div>
+                  <div className="grow">
+                    <div className="title">{e.description}</div>
+                    <div className="muted small">
+                      {name(e.paid_by)} paid {money(e.amount)}
+                      {e.local_amount != null && e.local_currency !== group.currency && (
+                        <> · {e.local_amount.toFixed(2)} {e.local_currency} @ {e.fx_rate}</>
+                      )}
+                    </div>
+                  </div>
+                  <div className="right small">
+                    {Math.abs(delta) < 0.005 ? (
+                      <span className="muted">not involved</span>
+                    ) : (
+                      <span className={delta > 0 ? 'posText' : 'owe'}>
+                        {delta > 0 ? 'you lent' : 'you borrowed'}
+                        <div className="amt">{money(Math.abs(delta))}</div>
+                      </span>
                     )}
                   </div>
-                </div>
-                <div className="right">
-                  <div className="small muted">your share</div>
-                  <div>{money(myShare)}</div>
                 </div>
               </div>
             )
@@ -148,7 +182,7 @@ export default function GroupPage({ userId }: { userId: string }) {
           {transfers.map((t, i) => (
             <div key={i} className="card row">
               <span>{name(t.from)} → {name(t.to)}: <b>{money(t.amount)}</b></span>
-              <button onClick={() => settle(t.from, t.to, t.amount)}>Settle</button>
+              {t.from === userId && <button onClick={() => settle(t.from, t.to, t.amount)}>Settle</button>}
             </div>
           ))}
           <h3>Net balances</h3>
@@ -165,8 +199,11 @@ export default function GroupPage({ userId }: { userId: string }) {
             <>
               <h3>Payments made</h3>
               {settlements.map((s) => (
-                <div key={s.id} className="small muted">
-                  {name(s.from_user)} paid {name(s.to_user)} {money(s.amount)} · {s.created_at.slice(0, 10)}
+                <div key={s.id} className="row small">
+                  <span className="muted">
+                    {name(s.from_user)} paid {name(s.to_user)} {money(s.amount)} · {s.created_at.slice(0, 10)}
+                  </span>
+                  <button className="link danger" onClick={() => revertPayment(s)}>Revert</button>
                 </div>
               ))}
             </>
@@ -177,24 +214,45 @@ export default function GroupPage({ userId }: { userId: string }) {
       {tab === 'history' && (
         <>
           {audit.length === 0 && <p className="muted">No activity recorded yet.</p>}
-          {audit.map((a) => {
-            const canRestore = a.entity === 'expense' && a.action === 'deleted' && !expenses.some((e) => e.id === a.entity_id)
-            return (
-              <div key={a.id} className="card">
-                <div className="small muted">{new Date(a.created_at).toLocaleString()}</div>
-                <div>
-                  <b>{a.actor_id ? name(a.actor_id) : 'Someone'}</b> {a.action} {a.entity === 'expense' ? 'expense' : 'a'} <b>{a.summary}</b>
+          <div className="timeline">
+            {audit.map((a, i) => {
+              const canRestore = a.entity === 'expense' && a.action === 'deleted' && !expenses.some((e) => e.id === a.entity_id)
+              const day = new Date(a.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+              const newDay = i === 0 || new Date(audit[i - 1].created_at).toLocaleDateString() !== new Date(a.created_at).toLocaleDateString()
+              return (
+                <div key={a.id}>
+                  {newDay && <div className="tlDay">{day}</div>}
+                  <div className="tlItem">
+                    <span className={`dot ${a.action}`} />
+                    <div className="small muted">{new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                    <div>
+                      <b>{a.actor_id ? name(a.actor_id) : 'Someone'}</b> {a.action} {a.entity === 'expense' ? 'expense' : 'a'} <b>{a.summary}</b>
+                    </div>
+                    {a.details && a.action === 'updated' && a.old_details ? (
+                      <Changes before={a.old_details} after={a.details} name={name} cur={group.currency} />
+                    ) : (
+                      a.details && <Snapshot d={a.details} name={name} cur={group.currency} />
+                    )}
+                    {canRestore && a.details && <button onClick={() => restore(a.id)}>Restore this expense</button>}
+                  </div>
                 </div>
-                {a.details && a.action === 'updated' && a.old_details ? (
-                  <Changes before={a.old_details} after={a.details} name={name} cur={group.currency} />
-                ) : (
-                  a.details && <Snapshot d={a.details} name={name} cur={group.currency} />
-                )}
-                {canRestore && a.details && <button onClick={() => restore(a.id)}>Restore this expense</button>}
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </>
+      )}
+
+      {viewing && (
+        <ExpenseDetail
+          e={viewing}
+          group={group}
+          name={name}
+          audit={audit}
+          userId={userId}
+          onClose={() => setViewing(null)}
+          onEdit={() => { setEditing(viewing); setViewing(null) }}
+          onDelete={async () => { await remove(viewing.id); setViewing(null) }}
+        />
       )}
 
       {(adding || editing) && (
@@ -214,9 +272,71 @@ export default function GroupPage({ userId }: { userId: string }) {
 
 type NameFn = (id: string) => string
 
+function ExpenseDetail(p: {
+  e: Expense
+  group: Group
+  name: NameFn
+  audit: AuditEntry[]
+  userId: string
+  onClose: () => void
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const { e, group } = p
+  const userIdOf = p.userId
+  const money = (n: number) => `${n.toFixed(2)} ${group.currency}`
+  const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+  const mine = p.audit.filter((a) => a.entity === 'expense' && a.entity_id === e.id)
+  const added = mine.find((a) => a.action === 'created')
+  const updated = mine.find((a) => a.action === 'updated')
+  const who = (a?: AuditEntry) => (a?.actor_id ? p.name(a.actor_id) : 'someone').toLowerCase()
+  const others = e.expense_splits.filter((s) => s.user_id !== e.paid_by)
+  const history = mine.slice().reverse()
+  return (
+    <div className="modal" onClick={p.onClose}>
+      <div className="card sheet" onClick={(ev) => ev.stopPropagation()}>
+        <div className="row">
+          <button className="link" onClick={p.onClose}>← Back</button>
+          <span className="inline">
+            <button className="link" onClick={p.onEdit}>Edit</button>
+            <button className="link danger" onClick={p.onDelete}>Delete</button>
+          </span>
+        </div>
+        <div className="tile big" style={{ background: `hsl(${hue(e.description)} 60% 88%)`, color: `hsl(${hue(e.description)} 45% 30%)` }}>
+          {e.description.trim().charAt(0).toUpperCase()}
+        </div>
+        <h3 style={{ margin: 0 }}>{e.description}</h3>
+        <div className="bigAmt">{money(e.amount)}</div>
+        {e.local_amount != null && e.local_currency !== group.currency && (
+          <div className="muted small">{e.local_amount.toFixed(2)} {e.local_currency} @ {e.fx_rate}</div>
+        )}
+        <div className="muted small">
+          <div>{day(e.spent_on + 'T00:00:00')}</div>
+          <div>Added by {added ? who(added) : 'unknown'} on {day(added?.created_at ?? e.created_at)}</div>
+          {updated && <div>Updated by {who(updated)} on {day(updated.created_at)}</div>}
+        </div>
+        <div className="paidTree">
+          <div><b>{p.name(e.paid_by)}</b> paid {money(e.amount)}</div>
+          {others.map((s) => (
+            <div key={s.user_id} className="branch">{s.user_id === userIdOf ? 'You owe' : `${p.name(s.user_id)} owes`} {money(s.share)}</div>
+          ))}
+        </div>
+        {history.length > 0 && (
+          <>
+            <div className="month">Activity</div>
+            {history.map((a) => (
+              <div key={a.id} className="small muted">{new Date(a.created_at).toLocaleString()} · {who(a)} {a.action}</div>
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-// 'YYYY-MM-DD' -> 'DD-Mon'
-const shortDate = (d: string) => `${d.slice(8, 10)}-${MONTHS[Number(d.slice(5, 7)) - 1]}`
+// stable pastel colour per description for the row tile
+export const hue = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
 
 function Snapshot({ d, name, cur }: { d: Details; name: NameFn; cur: string }) {
   if (d.from_user) return <div className="small muted">{name(d.from_user)} → {name(d.to_user!)}: {d.amount.toFixed(2)} {cur}</div>

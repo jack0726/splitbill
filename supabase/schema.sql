@@ -326,3 +326,8 @@ begin
   values (a.group_id, auth.uid(), 'restored', 'expense', a.entity_id, a.summary, expense_snapshot(a.entity_id));
   return a.entity_id;
 end $$;
+
+-- migration: you can only settle your own debts (payer of the settlement must be the caller)
+drop policy if exists "settlements insert" on public.settlements;
+create policy "settlements insert" on public.settlements for insert to authenticated
+  with check (is_member(group_id) and from_user = auth.uid());

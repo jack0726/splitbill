@@ -48,3 +48,31 @@ label.check input { width: auto; }
 .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); display: flex; align-items: flex-end; justify-content: center; z-index: 10; }
 .sheet { width: 100%; max-width: 560px; max-height: 92vh; overflow: auto; border-radius: 16px 16px 0 0; margin: 0; }
 .clickable { cursor: pointer; }
+.month { font-weight: 700; font-size: .9rem; margin: 20px 0 4px; }
+.exp { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+.exp .grow { flex: 1; min-width: 0; }
+.exp .title { font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exp .date { display: flex; flex-direction: column; align-items: center; width: 32px; color: var(--muted); font-size: .85rem; line-height: 1.2; }
+.exp .date .day { font-size: 1.1rem; }
+.exp .tile { width: 44px; height: 44px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.2rem; flex: none; }
+.exp .amt { font-size: 1.05rem; }
+.owe { color: var(--orange); }
+:root { --orange: #e8590c; }
+.overall { font-size: 1.15rem; }
+.overallLine { font-weight: 700; font-size: 1.1rem; margin-bottom: 4px; }
+.exp.exp { color: inherit; }
+.tile.big { width: 64px; height: 64px; font-size: 1.8rem; border-radius: 10px; }
+.bigAmt { font-size: 1.8rem; font-weight: 700; }
+.paidTree .branch { margin: 4px 0 0 14px; padding-left: 12px; border-left: 2px solid var(--border); color: var(--muted); }
+.chips { display: flex; gap: 8px; overflow-x: auto; margin: 12px 0; padding-bottom: 4px; }
+.chips button { background: var(--card); color: var(--text); border: 1px solid var(--border); white-space: nowrap; }
+.chips button.on { border-color: var(--green); color: var(--green); }
+.chips .settleBtn { background: var(--orange); color: #fff; border: 0; }
+.timeline { margin: 8px 0 8px 6px; border-left: 2px solid var(--border); padding-left: 20px; }
+.tlDay { font-weight: 700; font-size: .9rem; margin: 18px 0 6px -20px; padding-left: 20px; }
+.tlItem { position: relative; padding: 8px 0 14px; display: flex; flex-direction: column; gap: 2px; }
+.tlItem button { align-self: flex-start; margin-top: 6px; }
+.tlItem .dot { position: absolute; left: -27px; top: 12px; width: 12px; height: 12px; border-radius: 50%; background: var(--green); border: 2px solid var(--bg); }
+.tlItem .dot.updated { background: #3b82f6; }
+.tlItem .dot.deleted { background: var(--red); }
+.tlItem .dot.restored { background: var(--orange); }
