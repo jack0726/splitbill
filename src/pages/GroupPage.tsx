@@ -1,0 +1,259 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useParams } from 'react-router-dom'
+import { supabase, type Expense, type Group, type Profile, type Settlement } from '../lib/supabase'
+import { netBalances, simplifyDebts, splitByWeights, splitEqually } from '../lib/balances'
+
+type SplitMode = 'equal' | 'exact' | 'percent' | 'shares'
+
+export default function GroupPage({ userId }: { userId: string }) {
+  const { id } = useParams()
+  const [group, setGroup] = useState<Group | null>(null)
+  const [members, setMembers] = useState<Profile[]>([])
+  const [expenses, setExpenses] = useState<Expense[]>([])
+  const [settlements, setSettlements] = useState<Settlement[]>([])
+  const [tab, setTab] = useState<'expenses' | 'balances'>('expenses')
+  const [adding, setAdding] = useState(false)
+
+  const load = useCallback(async () => {
+    const [g, m, e, s] = await Promise.all([
+      supabase.from('groups').select('*').eq('id', id).single(),
+      supabase.from('group_members').select('profiles(id,name)').eq('group_id', id),
+      supabase
+        .from('expenses')
+        .select('*, expense_splits(user_id, share)')
+        .eq('group_id', id)
+        .order('spent_on', { ascending: false })
+        .order('created_at', { ascending: false }),
+      supabase.from('settlements').select('*').eq('group_id', id),
+    ])
+    setGroup(g.data as Group)
+    setMembers(((m.data ?? []) as unknown as { profiles: Profile }[]).map((r) => r.profiles))
+    setExpenses((e.data as Expense[]) ?? [])
+    setSettlements((s.data as Settlement[]) ?? [])
+  }, [id])
+
+  useEffect(() => {
+    load()
+    const ch = supabase
+      .channel(`group-${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => load())
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [id, load])
+
+  const name = (uid: string) => (uid === userId ? 'You' : members.find((m) => m.id === uid)?.name ?? '?')
+  const bal = useMemo(() => netBalances(expenses, settlements), [expenses, settlements])
+  const transfers = useMemo(() => simplifyDebts(bal), [bal])
+  const money = (n: number) => `${n.toFixed(2)} ${group?.currency ?? ''}`
+  const mine = (bal[userId] ?? 0) / 100
+
+  if (!group) return <p className="center muted">Loading…</p>
+  const link = `${location.origin}/join/${group.invite_code}`
+
+  async function settle(from: string, to: string, amount: number) {
+    await supabase.from('settlements').insert({ group_id: id, from_user: from, to_user: to, amount })
+    load()
+  }
+  async function remove(eid: string) {
+    if (confirm('Delete this expense?')) {
+      await supabase.from('expenses').delete().eq('id', eid)
+      load()
+    }
+  }
+
+  return (
+    <>
+      <h2>{group.name}</h2>
+      <div className={`card summary ${mine >= 0 ? 'pos' : 'neg'}`}>
+        {Math.abs(mine) < 0.005 ? 'You are settled up' : mine > 0 ? `You are owed ${money(mine)}` : `You owe ${money(-mine)}`}
+      </div>
+
+      <div className="card">
+        <small className="muted">Invite friends: share this link or code <b>{group.invite_code}</b></small>
+        <div className="row">
+          <input readOnly value={link} onFocus={(e) => e.target.select()} />
+          <button onClick={() => navigator.clipboard?.writeText(link)}>Copy</button>
+        </div>
+        <small className="muted">Members: {members.map((m) => m.name).join(', ')}</small>
+      </div>
+
+      <div className="tabs">
+        <button className={tab === 'expenses' ? 'on' : ''} onClick={() => setTab('expenses')}>Expenses</button>
+        <button className={tab === 'balances' ? 'on' : ''} onClick={() => setTab('balances')}>Balances</button>
+      </div>
+
+      {tab === 'expenses' && (
+        <>
+          <button className="fab" onClick={() => setAdding(true)}>+ Add expense</button>
+          {expenses.length === 0 && <p className="muted">No expenses yet.</p>}
+          {expenses.map((e) => {
+            const myShare = e.expense_splits.find((s) => s.user_id === userId)?.share ?? 0
+            return (
+              <div key={e.id} className="card row">
+                <div>
+                  <strong>{e.description}</strong>
+                  <div className="muted small">{name(e.paid_by)} paid {money(e.amount)} · {e.spent_on}</div>
+                </div>
+                <div className="right">
+                  <div className="small muted">your share</div>
+                  <div>{money(myShare)}</div>
+                  <button className="link danger" onClick={() => remove(e.id)}>delete</button>
+                </div>
+              </div>
+            )
+          })}
+        </>
+      )}
+
+      {tab === 'balances' && (
+        <>
+          <h3>Who owes who</h3>
+          {transfers.length === 0 && <p className="muted">Everyone is settled up 🎉</p>}
+          {transfers.map((t, i) => (
+            <div key={i} className="card row">
+              <span>{name(t.from)} → {name(t.to)}: <b>{money(t.amount)}</b></span>
+              <button onClick={() => settle(t.from, t.to, t.amount)}>Settle</button>
+            </div>
+          ))}
+          <h3>Net balances</h3>
+          {members.map((m) => {
+            const b = (bal[m.id] ?? 0) / 100
+            return (
+              <div key={m.id} className="row small">
+                <span>{name(m.id)}</span>
+                <span className={b >= 0 ? 'posText' : 'negText'}>{b >= 0 ? '+' : ''}{money(b)}</span>
+              </div>
+            )
+          })}
+          {settlements.length > 0 && (
+            <>
+              <h3>Payments made</h3>
+              {settlements.map((s) => (
+                <div key={s.id} className="small muted">
+                  {name(s.from_user)} paid {name(s.to_user)} {money(s.amount)} · {s.created_at.slice(0, 10)}
+                </div>
+              ))}
+            </>
+          )}
+        </>
+      )}
+
+      {adding && (
+        <AddExpense
+          groupId={group.id}
+          members={members}
+          userId={userId}
+          onClose={() => setAdding(false)}
+          onSaved={() => { setAdding(false); load() }}
+        />
+      )}
+    </>
+  )
+}
+
+function AddExpense(p: {
+  groupId: string
+  members: Profile[]
+  userId: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [desc, setDesc] = useState('')
+  const [amount, setAmount] = useState('')
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [paidBy, setPaidBy] = useState(p.userId)
+  const [mode, setMode] = useState<SplitMode>('equal')
+  const [included, setIncluded] = useState<Record<string, boolean>>(Object.fromEntries(p.members.map((m) => [m.id, true])))
+  const [vals, setVals] = useState<Record<string, string>>({})
+  const [err, setErr] = useState('')
+
+  const total = parseFloat(amount) || 0
+
+  function buildSplits() {
+    const ids = p.members.filter((m) => included[m.id]).map((m) => m.id)
+    if (ids.length === 0) throw new Error('Select at least one person')
+    if (mode === 'equal') return splitEqually(total, ids)
+    const nums = Object.fromEntries(ids.map((i) => [i, parseFloat(vals[i]) || 0]))
+    if (mode === 'exact') {
+      const sum = ids.reduce((a, i) => a + nums[i], 0)
+      if (Math.abs(sum - total) > 0.005) throw new Error(`Amounts add up to ${sum.toFixed(2)}, expected ${total.toFixed(2)}`)
+      return ids.map((i) => ({ user_id: i, share: nums[i] }))
+    }
+    if (mode === 'percent') {
+      const sum = ids.reduce((a, i) => a + nums[i], 0)
+      if (Math.abs(sum - 100) > 0.005) throw new Error(`Percentages add up to ${sum}, expected 100`)
+    }
+    if (ids.every((i) => nums[i] <= 0)) throw new Error('Enter at least one value')
+    return splitByWeights(total, nums)
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    setErr('')
+    try {
+      if (total <= 0) throw new Error('Enter an amount')
+      const splits = buildSplits()
+      const { data, error } = await supabase
+        .from('expenses')
+        .insert({ group_id: p.groupId, description: desc, amount: total, paid_by: paidBy, spent_on: date })
+        .select('id')
+        .single()
+      if (error) throw error
+      const { error: e2 } = await supabase
+        .from('expense_splits')
+        .insert(splits.map((s) => ({ ...s, expense_id: data.id })))
+      if (e2) {
+        await supabase.from('expenses').delete().eq('id', data.id)
+        throw e2
+      }
+      p.onSaved()
+    } catch (x) {
+      setErr((x as Error).message)
+    }
+  }
+
+  const unit = mode === 'percent' ? '%' : mode === 'shares' ? 'shares' : ''
+
+  return (
+    <div className="modal" onClick={p.onClose}>
+      <form className="card sheet" onClick={(e) => e.stopPropagation()} onSubmit={save}>
+        <h3>Add expense</h3>
+        <input placeholder="Description" value={desc} onChange={(e) => setDesc(e.target.value)} required />
+        <input type="number" step="0.01" min="0" inputMode="decimal" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+        <label>Paid by
+          <select value={paidBy} onChange={(e) => setPaidBy(e.target.value)}>
+            {p.members.map((m) => <option key={m.id} value={m.id}>{m.id === p.userId ? 'You' : m.name}</option>)}
+          </select>
+        </label>
+        <label>Split
+          <select value={mode} onChange={(e) => setMode(e.target.value as SplitMode)}>
+            <option value="equal">Equally</option>
+            <option value="exact">Exact amounts</option>
+            <option value="percent">Percentages</option>
+            <option value="shares">Shares</option>
+          </select>
+        </label>
+        {p.members.map((m) => (
+          <div key={m.id} className="row">
+            <label className="check">
+              <input type="checkbox" checked={!!included[m.id]} onChange={(e) => setIncluded({ ...included, [m.id]: e.target.checked })} />
+              {m.id === p.userId ? 'You' : m.name}
+            </label>
+            {mode !== 'equal' && included[m.id] && (
+              <span className="inline">
+                <input className="short" type="number" step="0.01" min="0" inputMode="decimal" value={vals[m.id] ?? ''} onChange={(e) => setVals({ ...vals, [m.id]: e.target.value })} />
+                {unit}
+              </span>
+            )}
+          </div>
+        ))}
+        {err && <p className="error">{err}</p>}
+        <div className="row">
+          <button type="button" className="link" onClick={p.onClose}>Cancel</button>
+          <button>Save</button>
+        </div>
+      </form>
+    </div>
+  )
+}
