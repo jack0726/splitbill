@@ -16,7 +16,7 @@ export default function Auth() {
     const { error, data } =
       mode === 'in'
         ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password, options: { data: { name } } })
+        : await supabase.auth.signUp({ email, password, options: { data: { name }, emailRedirectTo: window.location.origin } })
     if (error) setMsg(error.message)
     else if (mode === 'up' && !data.session) setMsg('Check your email to confirm your account, then sign in.')
     setBusy(false)
