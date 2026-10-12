@@ -14,6 +14,8 @@ A free, self-hosted Splitwise-style app for splitting expenses with friends. Ins
 - Expense list styled like Splitwise for Android: grouped by month, each row shows the date, a coloured initial tile, "X paid …" and "you lent / you borrowed" (green / orange)
 - Splitwise-style Groups home (overall balance, per-group "X owes you"), group header with overall balance and per-person lines plus a chip row (Settle up / Expenses / Balances / History), and an expense detail view (paid-by tree, added/updated info, activity) opened by tapping a row
 - Filter expenses by payer or text; tap an expense row to edit it (delete is inside the edit view); a **History** tab shows a vertical timeline (grouped by day) of the audit log of who created, changed or deleted expenses and payments, with full details (amount, payer, who shared what, before → after for edits), and deleted expenses can be restored from there
+- Add-expense date shows as `Mon-DD` (tap to open the calendar and override); an **Advanced** section lets you tick a category (🍽️ Food & Drinks, 🛒 Groceries, 🚕 Transport, ✈️ Flights, 🏨 Stay, 🎟️ Tickets & Activities, 🛍️ Shopping, ⛽ Petrol & Toll, 📦 Other), shown as the emoji on the expense tile. Existing databases: re-run the last migration block in `supabase/schema.sql`
+- **Billing** tab: summary tiles (total, per person, per day, count), spending by category (donut), paid vs. share per person, who spent on what (per-person stacked category bars), spending by day, by month (when the group spans several months), and biggest expenses
 - Local vs settlement currency (both default to SGD): per expense, enter the amount in the trip's local currency (converted at a live FX rate, with an opt-in "Override rate" checkbox; rounded to 2 dp) or directly in the settlement currency
 - Realtime updates across members' devices
 - Installable PWA, works with light/dark mode
@@ -65,4 +67,5 @@ private npm mirror makes Cloudflare builds fail with `403`.
 - [x] Deploy to Cloudflare
 - [ ] Test with a friend on the live URL
 - [x] Edit existing expenses, audit log (History tab)
-- [ ] Per-expense comments, expense categories
+- [x] Expense categories
+- [ ] Per-expense comments

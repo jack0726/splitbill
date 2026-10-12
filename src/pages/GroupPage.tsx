@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase, type AuditEntry, type Details, type Expense, type Group, type Profile, type Settlement } from '../lib/supabase'
+import Billing from './Billing'
 import { fetchRate } from '../lib/fx'
 import { netBalances, simplifyDebts, splitByWeights, splitEqually } from '../lib/balances'
 
@@ -12,7 +13,7 @@ export default function GroupPage({ userId }: { userId: string }) {
   const [members, setMembers] = useState<Profile[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [settlements, setSettlements] = useState<Settlement[]>([])
-  const [tab, setTab] = useState<'expenses' | 'balances' | 'history'>('expenses')
+  const [tab, setTab] = useState<'expenses' | 'balances' | 'billing' | 'history'>('expenses')
   const [audit, setAudit] = useState<AuditEntry[]>([])
   const [payer, setPayer] = useState('')
   const [newestFirst, setNewestFirst] = useState(true)
@@ -111,8 +112,11 @@ export default function GroupPage({ userId }: { userId: string }) {
         <button className="settleBtn" onClick={() => setTab('balances')}>Settle up</button>
         <button className={tab === 'expenses' ? 'on' : ''} onClick={() => setTab('expenses')}>Expenses</button>
         <button className={tab === 'balances' ? 'on' : ''} onClick={() => setTab('balances')}>Balances</button>
+        <button className={tab === 'billing' ? 'on' : ''} onClick={() => setTab('billing')}>Billing</button>
         <button className={tab === 'history' ? 'on' : ''} onClick={() => setTab('history')}>History</button>
       </div>
+
+      {tab === 'billing' && <Billing expenses={expenses} group={group} members={members} name={name} />}
 
       {tab === 'expenses' && (
         <>
@@ -147,7 +151,7 @@ export default function GroupPage({ userId }: { userId: string }) {
                     <span className="day">{e.spent_on.slice(8, 10)}</span>
                   </div>
                   <div className="tile" style={{ background: `hsl(${hue(e.description)} 60% 88%)`, color: `hsl(${hue(e.description)} 45% 30%)` }}>
-                    {e.description.trim().charAt(0).toUpperCase()}
+                    {catEmoji(e.category) ?? e.description.trim().charAt(0).toUpperCase()}
                   </div>
                   <div className="grow">
                     <div className="title">{e.description}</div>
@@ -303,7 +307,7 @@ function ExpenseDetail(p: {
           </span>
         </div>
         <div className="tile big" style={{ background: `hsl(${hue(e.description)} 60% 88%)`, color: `hsl(${hue(e.description)} 45% 30%)` }}>
-          {e.description.trim().charAt(0).toUpperCase()}
+          {catEmoji(e.category) ?? e.description.trim().charAt(0).toUpperCase()}
         </div>
         <h3 style={{ margin: 0 }}>{e.description}</h3>
         <div className="bigAmt">{money(e.amount)}</div>
@@ -334,6 +338,18 @@ function ExpenseDetail(p: {
   )
 }
 
+export const CATEGORIES = [
+  { id: 'food', emoji: '🍽️', label: 'Food & Drinks' },
+  { id: 'groceries', emoji: '🛒', label: 'Groceries' },
+  { id: 'transport', emoji: '🚕', label: 'Transport' },
+  { id: 'flights', emoji: '✈️', label: 'Flights' },
+  { id: 'stay', emoji: '🏨', label: 'Stay' },
+  { id: 'activities', emoji: '🎟️', label: 'Tickets & Activities' },
+  { id: 'shopping', emoji: '🛍️', label: 'Shopping' },
+  { id: 'fuel', emoji: '⛽', label: 'Petrol & Toll' },
+  { id: 'other', emoji: '📦', label: 'Other' },
+]
+const catEmoji = (id: string | null | undefined) => CATEGORIES.find((c) => c.id === id)?.emoji
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 // stable pastel colour per description for the row tile
 export const hue = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
@@ -362,7 +378,7 @@ function Changes({ before, after, name, cur }: { before: Details; after: Details
     if (v == null) return '–'
     return k === 'paid_by' ? name(String(v)) : k === 'amount' ? `${Number(v).toFixed(2)} ${cur}` : String(v)
   }
-  const keys = ['description', 'amount', 'paid_by', 'spent_on', 'local_amount', 'local_currency', 'fx_rate', 'splits']
+  const keys = ['description', 'amount', 'paid_by', 'spent_on', 'local_amount', 'local_currency', 'fx_rate', 'category', 'splits']
   const diff = keys.filter((k) => show(k, before) !== show(k, after))
   return (
     <div className="small muted">
@@ -392,6 +408,9 @@ function ExpenseForm(p: {
   const [amount, setAmount] = useState(ex ? String(exForeign ? ex.local_amount : ex.amount) : '')
   const [date, setDate] = useState(ex?.spent_on ?? new Date().toISOString().slice(0, 10))
   const [paidBy, setPaidBy] = useState(ex?.paid_by ?? p.userId)
+  const [category, setCategory] = useState<string | null>(ex?.category ?? null)
+  const [advanced, setAdvanced] = useState(!!ex?.category)
+  const dateRef = useRef<HTMLInputElement>(null)
   // stored splits are in the settlement currency: exact amounts if unconverted, else proportional weights
   const [mode, setMode] = useState<SplitMode>(ex ? (exForeign ? 'shares' : 'exact') : 'equal')
   const [included, setIncluded] = useState<Record<string, boolean>>(
@@ -467,6 +486,7 @@ function ExpenseForm(p: {
         local_amount: total,
         local_currency: entryCur,
         fx_rate: foreign ? fxRate : 1,
+        category,
       }
       const { error } = await supabase.rpc('save_expense', { eid: ex?.id ?? null, gid: p.group.id, fields: row, splits })
       if (error) throw error
@@ -520,7 +540,12 @@ function ExpenseForm(p: {
             {settleTotal > 0 && <small className="muted">≈ {settleTotal.toFixed(2)} {settleCur}</small>}
           </div>
         )}
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+        <div className="dateField">
+          <button type="button" className="dateBtn" onClick={() => dateRef.current?.showPicker?.()}>
+            📅 {MONTHS[Number(date.slice(5, 7)) - 1]}-{date.slice(8, 10)}
+          </button>
+          <input ref={dateRef} className="dateHidden" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+        </div>
         <label>Paid by
           <select value={paidBy} onChange={(e) => setPaidBy(e.target.value)}>
             {p.members.map((m) => <option key={m.id} value={m.id}>{m.id === p.userId ? 'You' : m.name}</option>)}
@@ -548,6 +573,17 @@ function ExpenseForm(p: {
             )}
           </div>
         ))}
+        <button type="button" className="link" onClick={() => setAdvanced(!advanced)}>{advanced ? '▾' : '▸'} Advanced</button>
+        {advanced && (
+          <div className="cats">
+            {CATEGORIES.map((c) => (
+              <label key={c.id} className="check">
+                <input type="checkbox" checked={category === c.id} onChange={(e) => setCategory(e.target.checked ? c.id : null)} />
+                {c.emoji} {c.label}
+              </label>
+            ))}
+          </div>
+        )}
         {err && <p className="error">{err}</p>}
         <div className="row">
           <button type="button" className="link" onClick={p.onClose}>Cancel</button>

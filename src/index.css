@@ -76,3 +76,25 @@ label.check input { width: auto; }
 .tlItem .dot.updated { background: #3b82f6; }
 .tlItem .dot.deleted { background: var(--red); }
 .tlItem .dot.restored { background: var(--orange); }
+
+.dateField { position: relative; }
+.dateBtn { width: 100%; text-align: left; background: #fff; color: var(--text); border: 1px solid #ccc; font-weight: 400; }
+.dateHidden { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.cats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stats .card { margin: 0; gap: 2px; }
+.statVal { font-weight: 700; font-size: 1.05rem; }
+.donutWrap { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.donut { width: 140px; height: 140px; flex: none; margin: 0 auto; }
+.legend { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 6px; }
+.legendRow { display: flex; align-items: center; gap: 8px; font-size: .9rem; }
+.swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.personBars { display: flex; flex-direction: column; gap: 4px; }
+.barRow { display: flex; align-items: center; gap: 6px; }
+.barLbl { width: 40px; flex: none; }
+.bar2 { height: 12px; border-radius: 4px; min-width: 2px; transition: width .3s; }
+.dayChart { display: flex; align-items: flex-end; gap: 6px; height: 150px; overflow-x: auto; padding-bottom: 2px; }
+.dayCol { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; min-width: 28px; flex: 1; }
+.dayBar { width: 100%; background: var(--green); border-radius: 4px 4px 0 0; min-height: 2px; }
+.dayLbl { font-size: .65rem; color: var(--muted); text-align: center; line-height: 1.1; margin-top: 4px; }
+.stack { display: flex; height: 14px; border-radius: 6px; overflow: hidden; background: var(--border); }
