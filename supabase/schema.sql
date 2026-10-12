@@ -144,3 +144,9 @@ create policy "settlements delete" on public.settlements for delete to authentic
 
 -- realtime updates in the app
 alter publication supabase_realtime add table public.expenses, public.expense_splits, public.settlements, public.group_members;
+
+-- backfill profiles for users who signed up before the trigger existed
+insert into public.profiles (id, name)
+select id, coalesce(raw_user_meta_data->>'name', split_part(email, '@', 1))
+from auth.users
+on conflict (id) do nothing;
