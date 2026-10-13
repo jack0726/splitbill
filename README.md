@@ -17,6 +17,8 @@ A free, self-hosted Splitwise-style app for splitting expenses with friends. Ins
 - Add-expense date shows as `Mon-DD` (tap to open the calendar and override); an **Advanced** section lets you tick a category (🍽️ Food & Drinks, 🛒 Groceries, 🚕 Transport, ✈️ Flights, 🏨 Stay, 🎟️ Tickets & Activities, 🛍️ Shopping, ⛽ Petrol & Toll, 📦 Other), shown as the emoji on the expense tile.- **Billing** tab: summary tiles (total, per person, per day, count), spending by category (donut), paid vs. share per person, who spent on what (per-person stacked category bars), spending by day, by month (when the group spans several months), and biggest expenses
 - Local vs settlement currency (both default to SGD): per expense, enter the amount in the trip's local currency (converted at a live FX rate, with an opt-in "Override rate" checkbox; rounded to 2 dp) or directly in the settlement currency
 - **Receipt photos**: on an expense tap 📷 *Take photo* (opens the phone camera) or 🖼️ *Choose photo*, crop with draggable corners, and the app shrinks it (max 1400px), converts it to black & white with auto-contrast and re-encodes it as a ~100 KB JPEG in the browser before upload. Images live in a private Cloudflare R2 bucket; the expense stores only the `receipt_key`. Shown in the expense detail (tap to enlarge). Receipts of deleted expenses are kept so *Restore* still works
+- **Profile page** (tap your avatar in the header): change your name, upload a profile photo (square crop, ~320px colour JPEG, stored in the same R2 bucket under `avatars/<user id>/`; key in `profiles.avatar_key`), and change your password
+- **Forgot password**: link on the sign-in form emails a reset link; opening it asks for a new password. In Supabase → Authentication → URL Configuration, add your site URL to the allowed redirect URLs
 - Realtime updates across members' devices
 - Installable PWA, works with light/dark mode
 
@@ -47,7 +49,7 @@ Live at https://splitbill.jack0726.workers.dev (auto-deploys on every push to `m
 
 1. Cloudflare dashboard → *R2 Object Storage* → enable R2 (free tier: 10 GB, 1M writes, 10M reads per month, no egress fees; Cloudflare asks for a payment method but won't charge within the free tier) → create a **private** bucket named `splitbill-receipts` (don't enable public access).
 2. In `wrangler.jsonc` set `SUPABASE_URL` and `SUPABASE_ANON_KEY` under `vars` (public values, same as the `VITE_` ones). The Worker (`worker/index.ts`) uses them to check the caller is a member of the group before reading/writing a receipt.
-3. Re-run `supabase/schema.sql` (adds `expenses.receipt_key`).
+3. Re-run `supabase/schema.sql` (adds `expenses.receipt_key` and `profiles.avatar_key`).
 4. Push to `main`; the Worker and R2 binding deploy together with the site. `npm run dev` serves only the frontend, so uploads need the deployed Worker (or `npx wrangler dev` after `npm run build`).
 
 Gotcha: `package-lock.json` must point at `registry.npmjs.org`. A lockfile generated through a

@@ -6,36 +6,74 @@ import Auth from './pages/Auth'
 import Groups from './pages/Groups'
 import GroupPage from './pages/GroupPage'
 import Join from './pages/Join'
+import Profile from './pages/Profile'
+import Avatar from './components/Avatar'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [ready, setReady] = useState(false)
+  const [recovering, setRecovering] = useState(false)
+  const [me, setMe] = useState<{ name: string; avatar_key: string | null } | null>(null)
+  const [tick, setTick] = useState(0)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
       setReady(true)
     })
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
+    const { data } = supabase.auth.onAuthStateChange((e, s) => {
+      if (e === 'PASSWORD_RECOVERY') setRecovering(true)
+      setSession(s)
+    })
     return () => data.subscription.unsubscribe()
   }, [])
 
+  const uid = session?.user.id
+  useEffect(() => {
+    if (!uid) return setMe(null)
+    supabase.from('profiles').select('name, avatar_key').eq('id', uid).single().then(({ data }) => setMe(data))
+  }, [uid, tick])
+
   if (!ready) return <p className="center muted">Loading…</p>
   if (!session) return <Auth />
+  if (recovering) return <ResetPassword onDone={() => setRecovering(false)} />
 
   return (
     <>
       <header className="bar">
         <Link to="/" className="logo">SplitBill</Link>
-        <button className="link" onClick={() => supabase.auth.signOut()}>Sign out</button>
+        <span className="barRight">
+          <Link to="/profile"><Avatar name={me?.name ?? '?'} k={me?.avatar_key} size={28} /></Link>
+          <button className="link" onClick={() => supabase.auth.signOut()}>Sign out</button>
+        </span>
       </header>
       <main>
         <Routes>
           <Route path="/" element={<Groups userId={session.user.id} />} />
           <Route path="/g/:id" element={<GroupPage userId={session.user.id} />} />
+          <Route path="/profile" element={<Profile user={session.user} onChanged={() => setTick((t) => t + 1)} />} />
           <Route path="/join/:code" element={<Join />} />
         </Routes>
       </main>
     </>
+  )
+}
+
+function ResetPassword({ onDone }: { onDone: () => void }) {
+  const [password, setPassword] = useState('')
+  const [msg, setMsg] = useState('')
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) setMsg(error.message)
+    else onDone()
+  }
+  return (
+    <form className="card auth" onSubmit={submit}>
+      <h1>New password</h1>
+      <input type="password" placeholder="New password (min 6 characters)" minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} required />
+      <button>Set password</button>
+      {msg && <p className="error">{msg}</p>}
+    </form>
   )
 }

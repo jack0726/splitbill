@@ -5,7 +5,7 @@ export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY,
 )
 
-export type Profile = { id: string; name: string }
+export type Profile = { id: string; name: string; avatar_key?: string | null }
 export type Group = { id: string; name: string; currency: string; local_currency: string; invite_code: string }
 export type Expense = {
   id: string

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { processReceipt, type Crop } from '../lib/receipt'
+import { processAvatar, processReceipt, type Crop } from '../lib/receipt'
 
 type Box = { x: number; y: number; w: number; h: number } // in displayed pixels
 type Drag = { mode: 'move' | 'nw' | 'ne' | 'sw' | 'se'; px: number; py: number; box: Box }
@@ -7,7 +7,7 @@ type Drag = { mode: 'move' | 'nw' | 'ne' | 'sw' | 'se'; px: number; py: number; 
 const MIN = 40
 
 // Full-screen crop step: drag the box or its corners, then "Use photo" crops + shrinks + converts to B&W.
-export default function ReceiptCropper(p: { img: ImageBitmap; onDone: (blob: Blob) => void; onCancel: () => void }) {
+export default function ReceiptCropper(p: { img: ImageBitmap; square?: boolean; onDone: (blob: Blob) => void; onCancel: () => void }) {
   const wrap = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState<{ w: number; h: number } | null>(null)
   const [box, setBox] = useState<Box>({ x: 0, y: 0, w: 0, h: 0 })
@@ -23,7 +23,12 @@ export default function ReceiptCropper(p: { img: ImageBitmap; onDone: (blob: Blo
     const w = Math.round(p.img.width * s)
     const h = Math.round(p.img.height * s)
     setSize({ w, h })
-    setBox({ x: Math.round(w * 0.05), y: Math.round(h * 0.05), w: Math.round(w * 0.9), h: Math.round(h * 0.9) })
+    if (p.square) {
+      const q = Math.round(Math.min(w, h) * 0.9)
+      setBox({ x: Math.round((w - q) / 2), y: Math.round((h - q) / 2), w: q, h: q })
+    } else {
+      setBox({ x: Math.round(w * 0.05), y: Math.round(h * 0.05), w: Math.round(w * 0.9), h: Math.round(h * 0.9) })
+    }
   }, [p.img])
 
   function start(mode: Drag['mode']) {
@@ -53,6 +58,12 @@ export default function ReceiptCropper(p: { img: ImageBitmap; onDone: (blob: Blo
       x = nx; y = ny
       w = Math.max(MIN, x2 - nx)
       h = Math.max(MIN, y2 - ny)
+      if (p.square) {
+        const q = Math.min(w, h)
+        if (left) x += w - q
+        if (top) y += h - q
+        w = h = q
+      }
     }
     setBox({ x, y, w, h })
   }
@@ -64,7 +75,7 @@ export default function ReceiptCropper(p: { img: ImageBitmap; onDone: (blob: Blo
     try {
       const k = p.img.width / size.w
       const crop: Crop = { x: box.x * k, y: box.y * k, w: box.w * k, h: box.h * k }
-      p.onDone(await processReceipt(p.img, crop))
+      p.onDone(await (p.square ? processAvatar : processReceipt)(p.img, crop))
     } catch (x) {
       setErr((x as Error).message)
       setBusy(false)

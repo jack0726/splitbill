@@ -76,6 +76,7 @@ alter table public.expenses add column if not exists local_currency text;
 alter table public.expenses add column if not exists fx_rate numeric(18,8);  -- settlement units per 1 local unit
 alter table public.expenses add column if not exists updated_at timestamptz;
 alter table public.expenses add column if not exists category text;
+alter table public.profiles add column if not exists avatar_key text;        -- R2 object key: avatars/<user id>/<uuid>.jpg
 alter table public.expenses add column if not exists receipt_key text;       -- R2 object key: <group id>/<uuid>.jpg
 
 alter table public.audit_log add column if not exists details jsonb;      -- state after (or before, for deletes)

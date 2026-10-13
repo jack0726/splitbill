@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 
 const MAX_EDGE = 1400
 const QUALITY = 0.7
+const AVATAR_EDGE = 320
 
 export type Crop = { x: number; y: number; w: number; h: number } // in source-image pixels
 
@@ -44,6 +45,17 @@ export async function processReceipt(img: ImageBitmap, crop: Crop): Promise<Blob
   )
 }
 
+// Crop to a square, downscale and encode as a small colour JPEG for a profile picture.
+export async function processAvatar(img: ImageBitmap, crop: Crop): Promise<Blob> {
+  const size = Math.max(1, Math.round(Math.min(AVATAR_EDGE, crop.w)))
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  canvas.getContext('2d')!.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, size, size)
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not encode image'))), 'image/jpeg', 0.85),
+  )
+}
+
 async function authHeader() {
   const { data } = await supabase.auth.getSession()
   return { Authorization: `Bearer ${data.session?.access_token ?? ''}` }
@@ -59,12 +71,22 @@ export async function uploadReceipt(groupId: string, blob: Blob): Promise<string
   return ((await res.json()) as { key: string }).key
 }
 
+export async function uploadAvatar(blob: Blob): Promise<string> {
+  const res = await fetch('/api/avatars', {
+    method: 'PUT',
+    headers: { ...(await authHeader()), 'Content-Type': 'image/jpeg' },
+    body: blob,
+  })
+  if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? 'Upload failed')
+  return ((await res.json()) as { key: string }).key
+}
+
 // <img> can't send the auth header, so fetch the bytes and hand back an object URL.
 const cache = new Map<string, string>()
 export async function receiptUrl(key: string): Promise<string> {
   const hit = cache.get(key)
   if (hit) return hit
-  const res = await fetch(`/api/receipts/${key}`, { headers: await authHeader() })
+  const res = await fetch(key.startsWith('avatars/') ? `/api/${key}` : `/api/receipts/${key}`, { headers: await authHeader() })
   if (!res.ok) throw new Error('Receipt unavailable')
   const url = URL.createObjectURL(await res.blob())
   cache.set(key, url)
