@@ -8,7 +8,7 @@ import { netBalances, simplifyDebts, splitByWeights, splitEqually } from '../lib
 import { deleteGroupReceipts } from '../lib/receipt'
 import GroupIconPicker, { GroupIcon, GROUP_COLORS } from '../components/GroupIconPicker'
 import PayNowDialog from '../components/PayNowDialog'
-import Avatar from '../components/Avatar'
+import Avatar, { AVATAR_PRESETS, presetAvatarKey } from '../components/Avatar'
 import { Share2 } from 'lucide-react'
 
 type SplitMode = 'equal' | 'exact' | 'percent' | 'shares'
@@ -29,6 +29,7 @@ export default function GroupPage({ userId }: { userId: string }) {
   const [editing, setEditing] = useState<Expense | null>(null)
   const [viewing, setViewing] = useState<Expense | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<'general' | 'members' | 'sharing' | 'danger'>('general')
   const [groupName, setGroupName] = useState('')
   const [groupIcon, setGroupIcon] = useState('Users')
   const [groupIconColor, setGroupIconColor] = useState<string | null>(null)
@@ -36,6 +37,8 @@ export default function GroupPage({ userId }: { userId: string }) {
   const [groupLocalCurrency, setGroupLocalCurrency] = useState('')
   const [sharePin, setSharePin] = useState('')
   const [shareUrl, setShareUrl] = useState('')
+  const [guestName, setGuestName] = useState('')
+  const [guestAvatar, setGuestAvatar] = useState<string | null>(null)
   const [settling, setSettling] = useState<{ transfer: { from: string; to: string; amount: number }; recipient: Profile } | null>(null)
 
   const load = useCallback(async () => {
@@ -121,6 +124,16 @@ export default function GroupPage({ userId }: { userId: string }) {
     setSettingsOpen(false)
     load()
   }
+  async function addGuest() {
+    if (!guestName.trim()) return
+    const { error } = await supabase.rpc('add_guest_member', {
+      gid: group!.id, guest_name: guestName.trim(), guest_avatar: guestAvatar,
+    })
+    if (error) return alert(error.message)
+    setGuestName('')
+    setGuestAvatar(null)
+    await load()
+  }
   async function createPublicShare() {
     const pin = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, '0')
     const { data, error } = await supabase.rpc('set_public_group_share', { gid: group!.id, pin })
@@ -137,16 +150,19 @@ export default function GroupPage({ userId }: { userId: string }) {
     setSharePin('')
   }
   async function toggleGroupSettings() {
+    const currentGroup = group
+    if (!currentGroup) return
     const opening = !settingsOpen
     setSettingsOpen(opening)
     if (!opening) return
-    setGroupName(group.name)
-    setGroupIcon(group.icon || 'Users')
-    setGroupIconColor(group.icon_color)
-    setGroupCurrency(group.currency)
-    setGroupLocalCurrency(group.local_currency)
+    setSettingsTab('general')
+    setGroupName(currentGroup.name)
+    setGroupIcon(currentGroup.icon || 'Users')
+    setGroupIconColor(currentGroup.icon_color)
+    setGroupCurrency(currentGroup.currency)
+    setGroupLocalCurrency(currentGroup.local_currency)
     setSharePin('')
-    const { data, error } = await supabase.rpc('get_public_group_share_id', { gid: group.id })
+    const { data, error } = await supabase.rpc('get_public_group_share_id', { gid: currentGroup.id })
     if (error) return alert(error.message)
     setShareUrl(data ? `${location.origin}/share/${data}` : '')
   }
@@ -159,12 +175,45 @@ export default function GroupPage({ userId }: { userId: string }) {
     <>
       <button className="groupTitle" onClick={() => void toggleGroupSettings()}><span className="groupIconBadge" style={{ background: group.icon_color || `hsl(${hue(group.name)} 60% 88%)`, color: GROUP_COLORS.find((c) => c.background === group.icon_color)?.foreground || `hsl(${hue(group.name)} 45% 30%)` }}><GroupIcon name={group.icon} size={21} /></span> {group.name} <span aria-hidden="true">⚙</span></button>
       {settingsOpen && (
-        <form className="card" onSubmit={saveGroupSettings}>
-          <h3>Group settings</h3>
-          {group.created_by === userId ? <>
+        <section className="card groupSettings">
+          <div className="settingsHeading"><div><h3>Group settings</h3><small className="muted">Manage your group in one place</small></div><button type="button" className="link" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>Close</button></div>
+          <div className="settingsTabs" role="tablist" aria-label="Group settings sections">
+            {(['general', 'members', 'sharing', 'danger'] as const).map((key) => <button type="button" role="tab" aria-selected={settingsTab === key} className={settingsTab === key ? 'on' : ''} key={key} onClick={() => setSettingsTab(key)}>{({ general: 'General', members: 'Members', sharing: 'Sharing', danger: 'Danger zone' })[key]}</button>)}
+          </div>
+          {settingsTab === 'general' && <form className="settingsPanel" onSubmit={saveGroupSettings}>
+            {group.created_by === userId ? <>
+            <h4>Group details</h4>
+            <label>Group name<input value={groupName} onChange={(e) => setGroupName(e.target.value)} required /></label>
+            <GroupIconPicker value={groupIcon} onChange={setGroupIcon} color={groupIconColor} onColorChange={setGroupIconColor} />
+            <div className="settingsCurrencyGrid"><label>Settlement currency<input value={groupCurrency} onChange={(e) => setGroupCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required /></label><label>Local currency<input value={groupLocalCurrency} onChange={(e) => setGroupLocalCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required /></label></div>
+            <div className="row settingsActions"><button type="submit">Save changes</button><button type="button" className="link" onClick={() => setSettingsOpen(false)}>Cancel</button></div>
+            </> : <p className="muted">Only the group creator can change group details.</p>}
+          </form>}
+          {settingsTab === 'members' && <div className="settingsPanel">
+            <h4>Invite friends</h4>
+            <p className="muted settingsDescription">Share this link or invite code <b>{group.invite_code}</b> with your group.</p>
+            <div className="row"><input aria-label="Group invite link" readOnly value={link} onFocus={(e) => e.target.select()} /><button type="button" onClick={() => void navigator.clipboard?.writeText(link)}>Copy</button></div>
+            <h4>Members</h4><div className="memberList settingsMemberList">{members.map((m) => <div className="memberItem" key={m.id}><Avatar name={m.name} k={m.avatar_key} size={30} /><span>{m.id === userId ? 'You' : m.name}</span></div>)}</div>
+            {group.created_by === userId && <div className="publicShareForm">
+              <b>Add someone without an account</b>
+              <small className="muted">Guests appear in expense and split lists. They can view expenses using your public link and PIN.</small>
+              <div>
+                <label>Guest name<input value={guestName} onChange={(e) => setGuestName(e.target.value)} maxLength={60} required /></label>
+                <div className="avatarPickerHeading"><Avatar name={guestName || 'Guest'} k={guestAvatar} size={48} /><span>Choose an avatar</span></div>
+                <div className="avatarChoices">
+                  <button type="button" className={`avatarChoice${guestAvatar === null ? ' selected' : ''}`} aria-label="Use initial" onClick={() => setGuestAvatar(null)}><Avatar name={guestName || 'Guest'} size={42} /></button>
+                  {AVATAR_PRESETS.map((preset) => { const key = presetAvatarKey(preset.id); return <button type="button" key={preset.id} className={`avatarChoice${guestAvatar === key ? ' selected' : ''}`} aria-label={preset.title} onClick={() => setGuestAvatar(key)}><Avatar name={guestName || 'Guest'} k={key} size={42} /></button> })}
+                </div>
+                <button type="button" onClick={() => void addGuest()} disabled={!guestName.trim()}>Add guest</button>
+              </div>
+            </div>}
+          </div>}
+          {settingsTab === 'sharing' && <div className="settingsPanel">
+            {group.created_by === userId ? <>
+            <h4>Public expense sharing</h4>
+            <p className="muted settingsDescription">Anyone with the link and 6 digit PIN can view expenses. Balances and settle up are hidden.</p>
             <div className="publicShareForm">
               <div className="row"><Share2 size={18} /><b>Share expenses publicly</b></div>
-              <small className="muted">Anyone with the link and 6 digit PIN can view expenses. Balances and settle up are hidden.</small>
               {shareUrl ? <>
                 <small className="muted">Public link</small>
                 <div className="row"><input readOnly value={shareUrl} onFocus={(e) => e.target.select()} /><button type="button" onClick={() => void navigator.clipboard?.writeText(shareUrl)}>Copy</button></div>
@@ -174,17 +223,10 @@ export default function GroupPage({ userId }: { userId: string }) {
                 <button type="button" className="danger" onClick={disablePublicShare}>Turn off public sharing</button>
               </> : <button type="button" onClick={() => void createPublicShare()}>Create share link and PIN</button>}
             </div>
-            <label>Group name<input value={groupName} onChange={(e) => setGroupName(e.target.value)} required /></label>
-            <GroupIconPicker value={groupIcon} onChange={setGroupIcon} color={groupIconColor} onColorChange={setGroupIconColor} />
-            <label>Settlement currency<input value={groupCurrency} onChange={(e) => setGroupCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required /></label>
-            <label>Local currency<input value={groupLocalCurrency} onChange={(e) => setGroupLocalCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required /></label>
-            <div className="row settingsActions">
-              <button type="submit">Save</button>
-              <button type="button" className="link" onClick={() => setSettingsOpen(false)}>Cancel</button>
-              <button type="button" className="danger" onClick={deleteGroup}>Delete group</button>
-            </div>
-          </> : <p className="muted">Only the group creator can change settings or delete this group.</p>}
-        </form>
+            </> : <p className="muted">Only the group creator can manage public sharing.</p>}
+          </div>}
+          {settingsTab === 'danger' && <div className="settingsPanel dangerPanel"><h4>Delete group</h4><p className="muted settingsDescription">Permanently remove the group, its expenses, history, and receipt attachments.</p>{group.created_by === userId ? <button type="button" className="danger" onClick={deleteGroup}>Delete group</button> : <p className="muted">Only the group creator can delete this group.</p>}</div>}
+        </section>
       )}
       <div className={`overallLine ${mine >= 0 ? 'posText' : 'owe'}`}>
         {Math.abs(mine) < 0.005 ? 'You are settled up' : mine > 0 ? `You are owed ${money(mine)} overall` : `You owe ${money(-mine)} overall`}
@@ -195,15 +237,6 @@ export default function GroupPage({ userId }: { userId: string }) {
           <span className={t.to === userId ? 'posText' : 'owe'}>{money(t.amount)}</span>
         </div>
       ))}
-
-      <div className="card">
-        <small className="muted">Invite friends: share this link or code <b>{group.invite_code}</b></small>
-        <div className="row">
-          <input readOnly value={link} onFocus={(e) => e.target.select()} />
-          <button onClick={() => navigator.clipboard?.writeText(link)}>Copy</button>
-        </div>
-        <small className="muted">Members: {members.map((m) => m.name).join(', ')}</small>
-      </div>
 
       <div className="chips">
         <button className="settleBtn" onClick={() => setTab('balances')}>Settle up</button>
