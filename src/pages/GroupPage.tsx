@@ -9,6 +9,7 @@ import { deleteGroupReceipts } from '../lib/receipt'
 import GroupIconPicker, { GroupIcon, GROUP_COLORS } from '../components/GroupIconPicker'
 import PayNowDialog from '../components/PayNowDialog'
 import Avatar from '../components/Avatar'
+import { Share2 } from 'lucide-react'
 
 type SplitMode = 'equal' | 'exact' | 'percent' | 'shares'
 
@@ -33,6 +34,8 @@ export default function GroupPage({ userId }: { userId: string }) {
   const [groupIconColor, setGroupIconColor] = useState<string | null>(null)
   const [groupCurrency, setGroupCurrency] = useState('')
   const [groupLocalCurrency, setGroupLocalCurrency] = useState('')
+  const [sharePin, setSharePin] = useState('')
+  const [shareUrl, setShareUrl] = useState('')
   const [settling, setSettling] = useState<{ transfer: { from: string; to: string; amount: number }; recipient: Profile } | null>(null)
 
   const load = useCallback(async () => {
@@ -118,6 +121,35 @@ export default function GroupPage({ userId }: { userId: string }) {
     setSettingsOpen(false)
     load()
   }
+  async function createPublicShare() {
+    const pin = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, '0')
+    const { data, error } = await supabase.rpc('set_public_group_share', { gid: group!.id, pin })
+    if (error) return alert(error.message)
+    const url = `${location.origin}/share/${data}`
+    setShareUrl(url)
+    setSharePin(pin)
+    await navigator.clipboard?.writeText(url)
+  }
+  async function disablePublicShare() {
+    const { error } = await supabase.rpc('disable_public_group_share', { gid: group!.id })
+    if (error) return alert(error.message)
+    setShareUrl('')
+    setSharePin('')
+  }
+  async function toggleGroupSettings() {
+    const opening = !settingsOpen
+    setSettingsOpen(opening)
+    if (!opening) return
+    setGroupName(group.name)
+    setGroupIcon(group.icon || 'Users')
+    setGroupIconColor(group.icon_color)
+    setGroupCurrency(group.currency)
+    setGroupLocalCurrency(group.local_currency)
+    setSharePin('')
+    const { data, error } = await supabase.rpc('get_public_group_share_id', { gid: group.id })
+    if (error) return alert(error.message)
+    setShareUrl(data ? `${location.origin}/share/${data}` : '')
+  }
   // transaction date, then the time it was entered
   const shown = expenses
     .filter((e) => (!payer || e.paid_by === payer) && e.description.toLowerCase().includes(query.trim().toLowerCase()))
@@ -125,18 +157,23 @@ export default function GroupPage({ userId }: { userId: string }) {
 
   return (
     <>
-      <button className="groupTitle" onClick={() => {
-        setGroupName(group.name)
-        setGroupIcon(group.icon || 'Users')
-        setGroupIconColor(group.icon_color)
-        setGroupCurrency(group.currency)
-        setGroupLocalCurrency(group.local_currency)
-        setSettingsOpen((open) => !open)
-      }}><span className="groupIconBadge" style={{ background: group.icon_color || `hsl(${hue(group.name)} 60% 88%)`, color: GROUP_COLORS.find((c) => c.background === group.icon_color)?.foreground || `hsl(${hue(group.name)} 45% 30%)` }}><GroupIcon name={group.icon} size={21} /></span> {group.name} <span aria-hidden="true">⚙</span></button>
+      <button className="groupTitle" onClick={() => void toggleGroupSettings()}><span className="groupIconBadge" style={{ background: group.icon_color || `hsl(${hue(group.name)} 60% 88%)`, color: GROUP_COLORS.find((c) => c.background === group.icon_color)?.foreground || `hsl(${hue(group.name)} 45% 30%)` }}><GroupIcon name={group.icon} size={21} /></span> {group.name} <span aria-hidden="true">⚙</span></button>
       {settingsOpen && (
         <form className="card" onSubmit={saveGroupSettings}>
           <h3>Group settings</h3>
           {group.created_by === userId ? <>
+            <div className="publicShareForm">
+              <div className="row"><Share2 size={18} /><b>Share expenses publicly</b></div>
+              <small className="muted">Anyone with the link and 6 digit PIN can view expenses. Balances and settle up are hidden.</small>
+              {shareUrl ? <>
+                <small className="muted">Public link</small>
+                <div className="row"><input readOnly value={shareUrl} onFocus={(e) => e.target.select()} /><button type="button" onClick={() => void navigator.clipboard?.writeText(shareUrl)}>Copy</button></div>
+                {sharePin && <div className="sharePinDisplay">PIN to share: <b>{sharePin}</b><button type="button" onClick={() => void navigator.clipboard?.writeText(sharePin)}>Copy PIN</button></div>}
+                {!sharePin && <small className="muted">PINs cannot be recovered. Rotate the PIN to create a new one.</small>}
+                <button type="button" onClick={() => void createPublicShare()}>Rotate PIN</button>
+                <button type="button" className="danger" onClick={disablePublicShare}>Turn off public sharing</button>
+              </> : <button type="button" onClick={() => void createPublicShare()}>Create share link and PIN</button>}
+            </div>
             <label>Group name<input value={groupName} onChange={(e) => setGroupName(e.target.value)} required /></label>
             <GroupIconPicker value={groupIcon} onChange={setGroupIcon} color={groupIconColor} onColorChange={setGroupIconColor} />
             <label>Settlement currency<input value={groupCurrency} onChange={(e) => setGroupCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required /></label>

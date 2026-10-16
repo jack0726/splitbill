@@ -8,6 +8,7 @@ import GroupPage from './pages/GroupPage'
 import Join from './pages/Join'
 import Profile from './pages/Profile'
 import Avatar from './components/Avatar'
+import PublicShare from './pages/PublicShare'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -56,8 +57,9 @@ export default function App() {
   }, [uid, tick])
 
   if (!ready) return <p className="center muted">Loading…</p>
-  if (!session) return <><div className="themeControl">{themeToggle}</div><Auth /></>
+  if (!session && !location.pathname.startsWith('/share/')) return <><div className="themeControl">{themeToggle}</div><Auth /></>
   if (recovering) return <ResetPassword onDone={() => setRecovering(false)} />
+  if (!session) return <Routes><Route path="/share/:id" element={<PublicShare />} /><Route path="*" element={<Auth />} /></Routes>
 
   return (
     <>
@@ -71,10 +73,13 @@ export default function App() {
       </header>
       <main>
         <Routes>
+          <Route path="/share/:id" element={<PublicShare />} />
+          <>
           <Route path="/" element={<Groups userId={session.user.id} />} />
           <Route path="/g/:id" element={<GroupPage userId={session.user.id} />} />
           <Route path="/profile" element={<Profile user={session.user} onChanged={() => setTick((t) => t + 1)} />} />
           <Route path="/join/:code" element={<Join />} />
+          </>
         </Routes>
       </main>
     </>

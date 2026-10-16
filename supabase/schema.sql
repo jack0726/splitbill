@@ -32,6 +32,16 @@ create table if not exists public.group_members (
   primary key (group_id, user_id)
 );
 
+-- PIN protected, read-only public expense shares. The random share id is part of the URL;
+-- the PIN hash is never exposed through table policies or RPC results.
+create table if not exists public.public_group_shares (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid not null unique references public.groups(id) on delete cascade,
+  pin_hash text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.public_group_shares enable row level security;
+
 create table if not exists public.expenses (
   id uuid primary key default gen_random_uuid(),
   group_id uuid not null references public.groups(id) on delete cascade,
@@ -251,6 +261,68 @@ begin
   values (a.group_id, auth.uid(), 'restored', 'expense', a.entity_id, a.summary, expense_snapshot(a.entity_id));
   return a.entity_id;
 end $$;
+
+-- Create/rotate a public share. Only the group creator can manage it.
+create or replace function public.set_public_group_share(gid uuid, pin text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare sid uuid;
+begin
+  if auth.uid() is null or not exists (select 1 from groups where id = gid and created_by = auth.uid()) then
+    raise exception 'Only the group creator can manage sharing';
+  end if;
+  if pin !~ '^[0-9]{6}$' then raise exception 'PIN must be 6 digits'; end if;
+  sid := gen_random_uuid();
+  insert into public_group_shares (id, group_id, pin_hash) values (sid, gid, md5(pin || ':' || sid::text))
+  on conflict (group_id) do update set pin_hash = excluded.pin_hash, id = excluded.id, created_at = now()
+  returning id into sid;
+  return sid;
+end $$;
+
+create or replace function public.disable_public_group_share(gid uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not exists (select 1 from groups where id = gid and created_by = auth.uid()) then
+    raise exception 'Only the group creator can manage sharing';
+  end if;
+  delete from public_group_shares where group_id = gid;
+end $$;
+
+-- Let the group creator recover the active link after reopening settings. This reveals no PIN.
+create or replace function public.get_public_group_share_id(gid uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not exists (select 1 from groups where id = gid and created_by = auth.uid()) then
+    raise exception 'Only the group creator can manage sharing';
+  end if;
+  return (select id from public_group_shares where group_id = gid);
+end $$;
+
+-- Verify the PIN before returning only the data needed to read expense history.
+create or replace function public.read_public_group_share(share_id uuid, pin text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare sh public_group_shares; g public.groups;
+begin
+  select * into sh from public_group_shares where id = share_id;
+  if sh.id is null or pin !~ '^[0-9]{6}$' or sh.pin_hash <> md5(pin || ':' || sh.id::text) then
+    raise exception 'Invalid share link or PIN';
+  end if;
+  select * into g from groups where id = sh.group_id;
+  return jsonb_build_object(
+    'name', g.name, 'currency', g.currency, 'local_currency', g.local_currency,
+    'expenses', coalesce((select jsonb_agg(jsonb_build_object(
+      'id', e.id, 'description', e.description, 'amount', e.amount, 'spent_on', e.spent_on,
+      'local_amount', e.local_amount, 'local_currency', e.local_currency, 'fx_rate', e.fx_rate,
+      'category', e.category, 'paid_by', coalesce(p.name, 'Unknown')
+    ) order by e.spent_on desc, e.created_at desc)
+      from expenses e left join profiles p on p.id = e.paid_by where e.group_id = g.id), '[]'::jsonb)
+  );
+end $$;
+
+revoke all on public.public_group_shares from anon, authenticated;
+grant execute on function public.set_public_group_share(uuid, text) to authenticated;
+grant execute on function public.disable_public_group_share(uuid) to authenticated;
+grant execute on function public.get_public_group_share_id(uuid) to authenticated;
+grant execute on function public.read_public_group_share(uuid, text) to anon, authenticated;
 
 -- ───────────────────────── row level security ─────────────────────────
 
