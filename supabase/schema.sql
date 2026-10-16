@@ -13,6 +13,11 @@ create table if not exists public.profiles (
 create table if not exists public.groups (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  icon text not null default 'Users',
+  icon_color text,
+  description text,
+  start_date date,
+  end_date date,
   currency text not null default 'SGD',        -- settlement currency
   local_currency text not null default 'SGD',  -- currency spent while travelling
   invite_code text not null unique default substr(md5(random()::text), 1, 8),
@@ -68,6 +73,11 @@ create table if not exists public.audit_log (
 
 -- columns added after the first version (no-ops on a fresh database that already has them)
 alter table public.groups add column if not exists local_currency text not null default 'SGD';
+alter table public.groups add column if not exists icon text not null default 'Users';
+alter table public.groups add column if not exists icon_color text;
+alter table public.groups add column if not exists description text;
+alter table public.groups add column if not exists start_date date;
+alter table public.groups add column if not exists end_date date;
 alter table public.groups alter column currency set default 'SGD';
 
 -- amount/splits are always in the group's settlement currency; these keep the original entry

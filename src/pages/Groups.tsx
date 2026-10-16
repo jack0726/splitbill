@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase, type Expense, type Group, type Profile, type Settlement } from '../lib/supabase'
 import { netBalances, simplifyDebts } from '../lib/balances'
 import { hue } from './GroupPage'
+import GroupIconPicker, { GroupIcon, GROUP_COLORS } from '../components/GroupIconPicker'
 
 type Summary = { mine: number; lines: { text: string; amount: number; owed: boolean }[] }
 
@@ -10,6 +11,11 @@ export default function Groups({ userId }: { userId: string }) {
   const [groups, setGroups] = useState<Group[]>([])
   const [sums, setSums] = useState<Record<string, Summary>>({})
   const [name, setName] = useState('')
+  const [icon, setIcon] = useState('Users')
+  const [iconColor, setIconColor] = useState<string | null>(null)
+  const [description, setDescription] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
   const [currency, setCurrency] = useState('SGD')
   const [localCurrency, setLocalCurrency] = useState('SGD')
   const [code, setCode] = useState('')
@@ -43,7 +49,10 @@ export default function Groups({ userId }: { userId: string }) {
 
   async function create(e: React.FormEvent) {
     e.preventDefault()
-    const { data, error } = await supabase.from('groups').insert({ name, currency, local_currency: localCurrency }).select().single()
+    const { data, error } = await supabase.from('groups').insert({
+      name, icon, icon_color: iconColor, description: description.trim() || null, start_date: startDate || null, end_date: endDate || null,
+      currency, local_currency: localCurrency,
+    }).select().single()
     if (error) return setErr(error.message)
     nav(`/g/${data.id}`)
   }
@@ -73,8 +82,8 @@ export default function Groups({ userId }: { userId: string }) {
         const settled = Math.abs(mine) < 0.005
         return (
           <Link key={g.id} to={`/g/${g.id}`} className="exp">
-            <div className="tile big" style={{ background: `hsl(${hue(g.name)} 60% 88%)`, color: `hsl(${hue(g.name)} 45% 30%)` }}>
-              {g.name.trim().charAt(0).toUpperCase()}
+            <div className="tile big" style={{ background: g.icon_color || `hsl(${hue(g.name)} 60% 88%)`, color: GROUP_COLORS.find((c) => c.background === g.icon_color)?.foreground || `hsl(${hue(g.name)} 45% 30%)` }}>
+              <GroupIcon name={g.icon} size={30} />
             </div>
             <div className="grow">
               <div className="title">{g.name}</div>
@@ -92,12 +101,25 @@ export default function Groups({ userId }: { userId: string }) {
       <form className="card" onSubmit={create}>
         <h3>New group</h3>
         <input placeholder="Group name (e.g. Trip to Bergen)" value={name} onChange={(e) => setName(e.target.value)} required />
-        <label>Settlement currency
-          <input placeholder="SGD" value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required />
-        </label>
-        <label>Local currency (spent while travelling)
-          <input placeholder="SGD" value={localCurrency} onChange={(e) => setLocalCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required />
-        </label>
+        <GroupIconPicker value={icon} onChange={setIcon} color={iconColor} onColorChange={setIconColor} />
+        <details>
+          <summary>Options</summary>
+          <label>Description
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+          </label>
+          <label>Start date
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          </label>
+          <label>End date
+            <input type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} />
+          </label>
+          <label>Settlement currency
+            <input placeholder="SGD" value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required />
+          </label>
+          <label>Local currency (spent while travelling)
+            <input placeholder="SGD" value={localCurrency} onChange={(e) => setLocalCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required />
+          </label>
+        </details>
         <button>Create group</button>
       </form>
 

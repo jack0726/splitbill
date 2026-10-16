@@ -37,6 +37,16 @@ button.link { background: none; color: var(--muted); font-weight: 400; padding: 
 .bar .link { color: #fff; }
 button.danger { color: var(--red); }
 .groupTitle { display: flex; align-items: center; gap: 8px; padding: 4px 0; margin: 0 0 4px; background: transparent; color: var(--text); font-size: 1.5rem; font-weight: 700; }
+.groupIconBadge { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; flex: none; }
+.iconPicker { border: 0; padding: 0; margin: 4px 0; }
+.iconPicker legend { color: var(--muted); font-size: .9rem; margin-bottom: 6px; }
+.iconOptions { display: grid; grid-template-columns: repeat(8, minmax(36px, 1fr)); gap: 6px; }
+.iconOptions button { display: flex; align-items: center; justify-content: center; padding: 8px 4px; width: 100%; background: var(--card); color: var(--text); border: 1px solid var(--border); }
+.iconOptions button.selected { color: var(--green); border: 2px solid var(--green); padding: 7px 3px; }
+.colorOptions { display: grid; grid-template-columns: repeat(7, minmax(32px, 1fr)); gap: 7px; padding: 4px 0; }
+.colorOptions button { width: 36px; height: 36px; padding: 0; border: 2px solid transparent; border-radius: 50%; }
+.colorOptions button.selected { border-color: var(--text); }
+.colorOptions button[aria-label="Use automatic group color"] { width: auto; border-radius: 8px; padding: 0 8px; }
 .settingsActions { justify-content: space-between; flex-wrap: nowrap; }
 .settingsActions button { flex: 1; min-width: 0; padding: 8px 4px; font-size: .85rem; white-space: nowrap; }
 .card .row button { white-space: nowrap; }

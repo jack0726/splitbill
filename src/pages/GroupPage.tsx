@@ -6,6 +6,7 @@ import { ReceiptField, ReceiptThumb } from '../components/Receipt'
 import { fetchRate } from '../lib/fx'
 import { netBalances, simplifyDebts, splitByWeights, splitEqually } from '../lib/balances'
 import { deleteGroupReceipts } from '../lib/receipt'
+import GroupIconPicker, { GroupIcon, GROUP_COLORS } from '../components/GroupIconPicker'
 
 type SplitMode = 'equal' | 'exact' | 'percent' | 'shares'
 
@@ -26,6 +27,8 @@ export default function GroupPage({ userId }: { userId: string }) {
   const [viewing, setViewing] = useState<Expense | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [groupName, setGroupName] = useState('')
+  const [groupIcon, setGroupIcon] = useState('Users')
+  const [groupIconColor, setGroupIconColor] = useState<string | null>(null)
   const [groupCurrency, setGroupCurrency] = useState('')
   const [groupLocalCurrency, setGroupLocalCurrency] = useState('')
 
@@ -104,7 +107,7 @@ export default function GroupPage({ userId }: { userId: string }) {
     event.preventDefault()
     if (!group) return
     const { error } = await supabase.from('groups').update({
-      name: groupName.trim(), currency: groupCurrency.toUpperCase(), local_currency: groupLocalCurrency.toUpperCase(),
+      name: groupName.trim(), icon: groupIcon, icon_color: groupIconColor, currency: groupCurrency.toUpperCase(), local_currency: groupLocalCurrency.toUpperCase(),
     }).eq('id', group.id)
     if (error) return alert(error.message)
     setSettingsOpen(false)
@@ -119,15 +122,18 @@ export default function GroupPage({ userId }: { userId: string }) {
     <>
       <button className="groupTitle" onClick={() => {
         setGroupName(group.name)
+        setGroupIcon(group.icon || 'Users')
+        setGroupIconColor(group.icon_color)
         setGroupCurrency(group.currency)
         setGroupLocalCurrency(group.local_currency)
         setSettingsOpen((open) => !open)
-      }}>{group.name} <span aria-hidden="true">⚙</span></button>
+      }}><span className="groupIconBadge" style={{ background: group.icon_color || `hsl(${hue(group.name)} 60% 88%)`, color: GROUP_COLORS.find((c) => c.background === group.icon_color)?.foreground || `hsl(${hue(group.name)} 45% 30%)` }}><GroupIcon name={group.icon} size={21} /></span> {group.name} <span aria-hidden="true">⚙</span></button>
       {settingsOpen && (
         <form className="card" onSubmit={saveGroupSettings}>
           <h3>Group settings</h3>
           {group.created_by === userId ? <>
             <label>Group name<input value={groupName} onChange={(e) => setGroupName(e.target.value)} required /></label>
+            <GroupIconPicker value={groupIcon} onChange={setGroupIcon} color={groupIconColor} onColorChange={setGroupIconColor} />
             <label>Settlement currency<input value={groupCurrency} onChange={(e) => setGroupCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required /></label>
             <label>Local currency<input value={groupLocalCurrency} onChange={(e) => setGroupLocalCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required /></label>
             <div className="row settingsActions">
