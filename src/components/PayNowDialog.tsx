@@ -11,7 +11,7 @@ export default function PayNowDialog({ recipient, amount, currency, onPaid, onCa
   useEffect(() => {
     let live = true
     if (!recipient.paynow_mobile) return
-    QRCode.toDataURL(payNowPayload(recipient.paynow_mobile, recipient.name, currency === 'SGD' ? amount : null, 'SplitBill'), { width: 256, margin: 2, errorCorrectionLevel: 'M' })
+    QRCode.toDataURL(payNowPayload(recipient.paynow_mobile, recipient.name, currency === 'SGD' ? amount : null, 'Pizza'), { width: 256, margin: 2, errorCorrectionLevel: 'M' })
       .then((url) => { if (live) setSrc(url) }, () => { if (live) setError('Could not create the PayNow QR.') })
     return () => { live = false }
   }, [recipient, amount, currency])

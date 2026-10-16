@@ -143,7 +143,7 @@ export default function Profile({ user, onChanged }: { user: User; onChanged: ()
           <p className="muted small">We’ll turn your cropped photo into an illustrated headshot. You can preview it before saving.</p>
           <label className="check photoConsent">
             <input type="checkbox" checked={photoConsent} onChange={(e) => setPhotoConsent(e.target.checked)} />
-            <span>I agree to send my cropped photo to OpenAI to generate an avatar. SplitBill saves the generated image only if I choose it. Image generation may incur API charges.</span>
+            <span>I agree to send my cropped photo to OpenAI to generate an avatar. Pizza saves the generated image only if I choose it. Image generation may incur API charges.</span>
           </label>
           <div className="photoAvatarActions">
             <button type="button" disabled={!photoConsent || busy} onClick={() => setCameraOpen(true)}>📷 Take a selfie</button>

@@ -24,7 +24,7 @@ export default function PublicShare() {
 
   return (
     <main>
-      <header className="bar publicBar"><span className="logo">SplitBill</span><span>Shared expenses</span></header>
+      <header className="bar publicBar"><span className="logo">Pizza</span><span>Shared expenses</span></header>
       {!group ? (
         <form className="card auth" onSubmit={unlock}>
           <h2>View shared expenses</h2>

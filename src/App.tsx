@@ -9,6 +9,7 @@ import Join from './pages/Join'
 import Profile from './pages/Profile'
 import Avatar from './components/Avatar'
 import PublicShare from './pages/PublicShare'
+import PizzaLoading from './components/PizzaLoading'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -56,7 +57,7 @@ export default function App() {
     supabase.from('profiles').select('name, avatar_key').eq('id', uid).single().then(({ data }) => setMe(data))
   }, [uid, tick])
 
-  if (!ready) return <p className="center muted">Loading…</p>
+  if (!ready) return <PizzaLoading />
   if (!session && !location.pathname.startsWith('/share/')) return <><div className="themeControl">{themeToggle}</div><Auth /></>
   if (recovering) return <ResetPassword onDone={() => setRecovering(false)} />
   if (!session) return <Routes><Route path="/share/:id" element={<PublicShare />} /><Route path="*" element={<Auth />} /></Routes>
@@ -64,7 +65,7 @@ export default function App() {
   return (
     <>
       <header className="bar">
-        <Link to="/" className="logo">SplitBill</Link>
+        <Link to="/" className="logo"><img src="/icon.svg" alt="" />Pizza</Link>
         <div className="headerActions">
           {themeToggle}
           <Link to="/profile"><Avatar name={me?.name ?? '?'} k={me?.avatar_key} size={28} /></Link>

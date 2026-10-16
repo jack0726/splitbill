@@ -12,9 +12,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       workbox: { navigateFallbackDenylist: [/^\/api\//] },
       manifest: {
-        name: 'SplitBill',
-        short_name: 'SplitBill',
-        description: 'Split expenses with friends',
+        name: 'Pizza',
+        short_name: 'Pizza',
+        description: 'Split your pizza with friends',
         theme_color: '#1cc29f',
         background_color: '#ffffff',
         display: 'standalone',

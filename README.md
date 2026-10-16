@@ -1,4 +1,4 @@
-# SplitBill
+# Pizza
 
 A free, self-hosted Splitwise-style app for splitting expenses with friends. Installable on your phone (PWA).
 

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import PizzaLoading from '../components/PizzaLoading'
 
 export default function Auth() {
   const [mode, setMode] = useState<'in' | 'up' | 'forgot'>('in')
@@ -30,8 +31,9 @@ export default function Auth() {
 
   return (
     <form className="card auth" onSubmit={submit}>
-      <h1>SplitBill</h1>
-      <p className="muted">Split expenses with friends.</p>
+      <PizzaLoading compact />
+      <h1>Pizza</h1>
+      <p className="muted">Split your pizza with friends.</p>
       {mode === 'up' && (
         <input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} required />
       )}
