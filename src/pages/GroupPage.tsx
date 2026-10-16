@@ -246,7 +246,7 @@ export default function GroupPage({ userId }: { userId: string }) {
         <button className={tab === 'history' ? 'on' : ''} onClick={() => setTab('history')}>History</button>
       </div>
 
-      {tab === 'billing' && <Billing expenses={expenses} group={group} members={members} name={name} />}
+      {tab === 'billing' && <Billing expenses={expenses} settlements={settlements} group={group} members={members} name={name} />}
 
       {tab === 'expenses' && (
         <>

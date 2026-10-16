@@ -1,13 +1,16 @@
 import { useMemo } from 'react'
 import type { Expense, Group, Profile } from '../lib/supabase'
+import type { Settlement } from '../lib/supabase'
+import { netBalances, simplifyDebts } from '../lib/balances'
 import { CATEGORIES } from './GroupPage'
 
 const COLORS = ['#1cc29f', '#3b82f6', '#f59e0b', '#e5484d', '#8b5cf6', '#ec4899', '#14b8a6', '#84cc16', '#f97316']
 const GREY = '#9aa0a6'
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-export default function Billing({ expenses, group, members, name }: {
+export default function Billing({ expenses, settlements, group, members, name }: {
   expenses: Expense[]
+  settlements: Settlement[]
   group: Group
   members: Profile[]
   name: (uid: string) => string
@@ -35,6 +38,12 @@ export default function Billing({ expenses, group, members, name }: {
       return { id: m.id, paid, share }
     })
 
+    const payerCats = members.map((m) => ({
+      id: m.id,
+      total: expenses.filter((e) => e.paid_by === m.id).reduce((sum, e) => sum + e.amount, 0),
+      cells: cats.map((cat) => expenses.filter((e) => e.paid_by === m.id && (e.category ?? '') === cat.id).reduce((sum, e) => sum + e.amount, 0)),
+    }))
+
     const byDay = new Map<string, number>()
     for (const e of expenses) byDay.set(e.spent_on, (byDay.get(e.spent_on) ?? 0) + e.amount)
     const days = [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]))
@@ -60,13 +69,19 @@ export default function Billing({ expenses, group, members, name }: {
     const months = [...byMonth.entries()].sort((a, b) => a[0].localeCompare(b[0]))
 
     const top = [...expenses].sort((a, b) => b.amount - a.amount).slice(0, 5)
-    return { total, cats, people, personCats, months, days, span, top }
+    let running = 0
+    const cumulative = days.map(([day, amount]) => ({ day, total: (running += amount) }))
+    return { total, cats, people, payerCats, personCats, months, days, cumulative, span, top }
   }, [expenses, members])
 
   if (expenses.length === 0) return <p className="muted">No expenses yet, nothing to bill.</p>
 
-  const maxPerson = Math.max(...d.people.flatMap((p) => [p.paid, p.share]), 0.01)
   const maxDay = Math.max(...d.days.map((x) => x[1]), 0.01)
+  const maxPayer = Math.max(...d.payerCats.map((p) => p.total), 0.01)
+  const settlementBalances = netBalances(expenses, settlements)
+  const transfers = simplifyDebts(settlementBalances)
+  const maxCumulative = Math.max(...d.cumulative.map((p) => p.total), 0.01)
+  const chartPoints = d.cumulative.map((p, i) => `${d.cumulative.length < 2 ? 8 : 8 + (i / (d.cumulative.length - 1)) * 84},${42 - (p.total / maxCumulative) * 34}`).join(' ')
   // donut geometry: circumference of r=15.915 is 100, so dash lengths are percentages
   let offset = 25
 
@@ -107,35 +122,84 @@ export default function Billing({ expenses, group, members, name }: {
         </div>
       </div>
 
-      <h3>Paid vs. share</h3>
+      <h3>Who paid, and who used their share?</h3>
       <div className="card">
-        <div className="small muted">Paid = what they put up front. Share = what they actually consumed.</div>
+        <div className="billingExplain">
+          <div className="billingLegend"><span className="billingDot paidDot" />Paid upfront</div>
+          <div className="billingLegend"><span className="billingDot shareDot" />Their share of costs</div>
+          <p className="small muted">The difference shows who covered more of the group bill. It is not an extra charge.</p>
+        </div>
         {d.people.map((p) => {
           const diff = p.paid - p.share
+          const scale = Math.max(p.paid, p.share, 0.01)
           return (
-            <div key={p.id} className="personBars">
+            <div key={p.id} className="personBars billingPerson">
               <div className="row small"><b>{name(p.id)}</b>
-                <span className={diff >= 0 ? 'posText' : 'owe'}>{diff >= 0 ? '+' : ''}{fmt(diff)} {cur}</span>
+                <span className={`coveragePill ${diff >= 0 ? 'covered' : 'needsCover'}`}>
+                  {diff > 0 ? `Covered ${fmt(diff)} for group` : diff < 0 ? `Used ${fmt(-diff)} more than paid` : 'Paid their share'}
+                </span>
               </div>
-              <div className="barRow"><span className="barLbl small muted">Paid</span><div className="bar2" style={{ width: `${(p.paid / maxPerson) * 100}%`, background: '#3b82f6' }} /><span className="small">{fmt(p.paid)}</span></div>
-              <div className="barRow"><span className="barLbl small muted">Share</span><div className="bar2" style={{ width: `${(p.share / maxPerson) * 100}%`, background: 'var(--green)' }} /><span className="small">{fmt(p.share)}</span></div>
+              <div className="coverageTrack" aria-label={`${name(p.id)} paid ${fmt(p.paid)} and their share is ${fmt(p.share)} ${cur}`}>
+                <div className="coverageBar paidBar" style={{ width: `${(p.paid / scale) * 100}%` }} />
+                <div className="coverageBar shareBar" style={{ width: `${(p.share / scale) * 100}%` }} />
+              </div>
+              <div className="row small muted"><span>Paid <b className="billingAmount">{fmt(p.paid)}</b></span><span>Share <b className="billingAmount">{fmt(p.share)}</b></span></div>
             </div>
           )
         })}
       </div>
 
-      <h3>Who spent on what</h3>
+      <h3>Where each person’s share went</h3>
       <div className="card">
-        <div className="small muted">Each person's share of the cost, split by category.</div>
-        {d.personCats.map((p) => (
-          <div key={p.id} className="personBars">
-            <div className="row small"><b>{name(p.id)}</b><span>{fmt(p.total)} {cur}</span></div>
-            <div className="stack">
-              {p.list.map((x) => <div key={x.id} title={`${x.label}: ${fmt(x.amount)} ${cur}`} style={{ width: `${(x.amount / p.total) * 100}%`, background: x.color }} />)}
-            </div>
-            <div className="small muted">{p.list.map((x) => `${x.label} ${fmt(x.amount)}`).join(' · ')}</div>
+        <div className="small muted">Each bar is one member. Colors show their share by category; all bars use the same scale.</div>
+        {d.personCats.some((p) => p.total > 0) ? <div className="memberChartScroll">
+          <div className="memberChart" role="img" aria-label="Members' shares by category">
+            {d.personCats.map((p) => (
+              <div key={p.id} className="memberChartColumn" title={`${name(p.id)}: ${fmt(p.total)} ${cur}`}>
+                <b className="memberChartTotal">{fmt(p.total)}</b>
+                <div className="memberChartTrack">
+                  {p.list.map((x) => <div key={x.id} title={`${x.label}: ${fmt(x.amount)} ${cur}`} style={{ height: `${(x.amount / Math.max(...d.personCats.map((person) => person.total), 0.01)) * 100}%`, background: x.color }} />)}
+                </div>
+                <span className="memberChartName">{name(p.id)}</span>
+              </div>
+            ))}
           </div>
-        ))}
+        </div> : <div className="small muted">No expenses assigned to members.</div>}
+        <div className="personCategoryList memberChartLegend">
+          {d.cats.map((c) => <span key={c.id}><i className="swatch" style={{ background: c.color }} />{c.label}</span>)}
+        </div>
+      </div>
+
+      <h3>Who paid for what?</h3>
+      <div className="card">
+        <div className="small muted">Each row is a payer; darker cells show where their payments went.</div>
+        <div className="payerMatrixScroll"><table className="payerMatrix">
+          <thead><tr><th>Payer</th>{d.cats.map((c) => <th key={c.id}>{c.label}</th>)}<th>Total</th></tr></thead>
+          <tbody>{d.payerCats.map((p) => <tr key={p.id}>
+            <th>{name(p.id)}</th>
+            {p.cells.map((amount, i) => <td key={d.cats[i].id} style={{ background: amount ? `color-mix(in srgb, ${d.cats[i].color} ${Math.max(12, (amount / maxPayer) * 48)}%, var(--card))` : undefined }}>{amount ? fmt(amount) : '—'}</td>)}
+            <td><b>{fmt(p.total)}</b></td>
+          </tr>)}</tbody>
+        </table></div>
+      </div>
+
+      <h3>Trip spending over time</h3>
+      <div className="card">
+        <div className="row small muted"><span>Running total</span><b>{fmt(d.total)} {cur}</b></div>
+        <svg className="spendLineChart" viewBox="0 0 100 48" preserveAspectRatio="none" role="img" aria-label="Cumulative trip spending over time">
+          <path d="M 8 42 H 92" className="chartAxis" />
+          <polyline points={chartPoints} className="spendLine" />
+          {d.cumulative.map((p, i) => <circle key={p.day} cx={d.cumulative.length < 2 ? 8 : 8 + (i / (d.cumulative.length - 1)) * 84} cy={42 - (p.total / maxCumulative) * 34} r="1.4" className="spendPoint"><title>{p.day}: {fmt(p.total)} {cur} total</title></circle>)}
+        </svg>
+        <div className="row small muted"><span>{d.cumulative[0]?.day}</span><span>{d.cumulative.at(-1)?.day}</span></div>
+      </div>
+
+      <h3>Who still needs to pay?</h3>
+      <div className="card">
+        {transfers.length ? transfers.map((t, i) => <div className="settlementFlow" key={`${t.from}-${t.to}-${i}`}>
+          <b>{name(t.from)}</b><span className="settlementArrow">→</span><b>{name(t.to)}</b><span className="amt">{fmt(t.amount)} {cur}</span>
+        </div>) : <div className="small muted">Everyone is settled up.</div>}
+        <div className="small muted">Suggested payments after recorded settlements.</div>
       </div>
 
       <h3>Spending by day</h3>
@@ -169,7 +233,7 @@ export default function Billing({ expenses, group, members, name }: {
       <div className="card">
         {d.top.map((e) => (
           <div key={e.id} className="row small">
-            <span>{CATEGORIES.find((c) => c.id === e.category)?.emoji ?? '•'} {e.description}</span>
+            <span><span>{CATEGORIES.find((c) => c.id === e.category)?.emoji ?? '•'} {e.description}</span><span className="small muted expenseMeta">{name(e.paid_by)} paid · {e.spent_on}</span></span>
             <span className="amt">{fmt(e.amount)} {cur}</span>
           </div>
         ))}

@@ -149,6 +149,48 @@ label.check input { width: auto; }
 .dayBar { width: 100%; background: var(--green); border-radius: 4px 4px 0 0; min-height: 2px; }
 .dayLbl { font-size: .65rem; color: var(--muted); text-align: center; line-height: 1.1; margin-top: 4px; }
 .stack { display: flex; height: 14px; border-radius: 6px; overflow: hidden; background: var(--border); }
+.billingExplain { display: flex; flex-wrap: wrap; gap: 4px 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.billingExplain p { flex-basis: 100%; margin: 2px 0 0; }
+.billingLegend { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); }
+.billingDot { width: 10px; height: 10px; border-radius: 50%; }
+.paidDot { background: #3b82f6; }
+.shareDot { background: var(--green); }
+.billingPerson { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.billingPerson:last-child { border-bottom: 0; padding-bottom: 0; }
+.coveragePill { border-radius: 999px; padding: 4px 8px; font-size: .75rem; text-align: right; }
+.coveragePill.covered { background: color-mix(in srgb, var(--green) 14%, var(--card)); color: var(--green); }
+.coveragePill.needsCover { background: color-mix(in srgb, var(--orange) 12%, var(--card)); color: var(--orange); }
+.coverageTrack { display: flex; flex-direction: column; gap: 4px; padding: 3px 0; }
+.coverageBar { height: 9px; min-width: 0; border-radius: 999px; }
+.paidBar { background: #3b82f6; }
+.shareBar { background: var(--green); }
+.billingAmount { color: var(--text); font-weight: 600; }
+.personCategoryList { display: flex; flex: 1; flex-wrap: wrap; align-content: flex-start; gap: 6px 12px; color: var(--muted); font-size: .8rem; }
+.personCategoryList span { display: inline-flex; align-items: center; gap: 5px; }
+.personCategoryList .swatch { width: 8px; height: 8px; }
+.memberChartScroll { overflow-x: auto; padding: 8px 0 2px; }
+.memberChart { display: flex; align-items: flex-end; justify-content: space-around; gap: 12px; min-width: 100%; width: max-content; height: 220px; padding: 0 8px; border-bottom: 1px solid var(--border); }
+.memberChartColumn { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 5px; width: 54px; height: 100%; flex: none; }
+.memberChartTotal { font-size: .68rem; color: var(--muted); white-space: nowrap; }
+.memberChartTrack { display: flex; flex-direction: column-reverse; width: 36px; height: 170px; overflow: hidden; border-radius: 6px 6px 0 0; background: var(--border); }
+.memberChartTrack > div { width: 100%; min-height: 1px; flex: none; }
+.memberChartName { width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: .72rem; }
+.memberChartLegend { padding-top: 4px; }
+.payerMatrixScroll { overflow-x: auto; }
+.payerMatrix { width: 100%; border-collapse: separate; border-spacing: 4px; font-size: .75rem; }
+.payerMatrix th { color: var(--muted); font-weight: 600; text-align: left; white-space: nowrap; }
+.payerMatrix td { min-width: 56px; padding: 7px 6px; border-radius: 6px; text-align: right; white-space: nowrap; }
+.payerMatrix td:last-child { background: var(--bg); }
+.spendLineChart { width: 100%; height: 150px; overflow: visible; }
+.chartAxis { stroke: var(--border); stroke-width: .6; }
+.spendLine { fill: none; stroke: var(--green); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.spendPoint { fill: var(--green); stroke: var(--card); stroke-width: .7; }
+.settlementFlow { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: .9rem; }
+.settlementFlow:last-of-type { border-bottom: 0; }
+.settlementFlow > b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settlementArrow { color: var(--muted); }
+.settlementFlow .amt { margin-left: auto; white-space: nowrap; }
+.expenseMeta { display: block; margin-top: 2px; }
 
 /* receipt photo: cropper, thumbnail, viewer */
 .cropper { position: fixed; inset: 0; z-index: 30; background: #000; color: #fff; display: flex; flex-direction: column; }
