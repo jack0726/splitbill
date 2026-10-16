@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { supabase, type AuditEntry, type Details, type Expense, type Group, type Profile, type Settlement } from '../lib/supabase'
 import Billing from './Billing'
 import { ReceiptField, ReceiptThumb } from '../components/Receipt'
 import { fetchRate } from '../lib/fx'
 import { netBalances, simplifyDebts, splitByWeights, splitEqually } from '../lib/balances'
+import { deleteGroupReceipts } from '../lib/receipt'
 
 type SplitMode = 'equal' | 'exact' | 'percent' | 'shares'
 
 export default function GroupPage({ userId }: { userId: string }) {
   const { id } = useParams()
+  const nav = useNavigate()
   const [group, setGroup] = useState<Group | null>(null)
   const [members, setMembers] = useState<Profile[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
@@ -22,6 +24,10 @@ export default function GroupPage({ userId }: { userId: string }) {
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Expense | null>(null)
   const [viewing, setViewing] = useState<Expense | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [groupName, setGroupName] = useState('')
+  const [groupCurrency, setGroupCurrency] = useState('')
+  const [groupLocalCurrency, setGroupLocalCurrency] = useState('')
 
   const load = useCallback(async () => {
     const [g, m, e, s, a] = await Promise.all([
@@ -82,6 +88,28 @@ export default function GroupPage({ userId }: { userId: string }) {
     if (error) alert(error.message)
     load()
   }
+  async function deleteGroup() {
+    if (!group) return
+    if (!confirm(`Delete “${group.name}” and all its expenses, history, and receipt attachments? This cannot be undone.`)) return
+    try {
+      await deleteGroupReceipts(group.id)
+      const { error } = await supabase.from('groups').delete().eq('id', group.id)
+      if (error) throw error
+      nav('/')
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not delete group')
+    }
+  }
+  async function saveGroupSettings(event: React.FormEvent) {
+    event.preventDefault()
+    if (!group) return
+    const { error } = await supabase.from('groups').update({
+      name: groupName.trim(), currency: groupCurrency.toUpperCase(), local_currency: groupLocalCurrency.toUpperCase(),
+    }).eq('id', group.id)
+    if (error) return alert(error.message)
+    setSettingsOpen(false)
+    load()
+  }
   // transaction date, then the time it was entered
   const shown = expenses
     .filter((e) => (!payer || e.paid_by === payer) && e.description.toLowerCase().includes(query.trim().toLowerCase()))
@@ -89,7 +117,27 @@ export default function GroupPage({ userId }: { userId: string }) {
 
   return (
     <>
-      <h2>{group.name}</h2>
+      <button className="groupTitle" onClick={() => {
+        setGroupName(group.name)
+        setGroupCurrency(group.currency)
+        setGroupLocalCurrency(group.local_currency)
+        setSettingsOpen((open) => !open)
+      }}>{group.name} <span aria-hidden="true">⚙</span></button>
+      {settingsOpen && (
+        <form className="card" onSubmit={saveGroupSettings}>
+          <h3>Group settings</h3>
+          {group.created_by === userId ? <>
+            <label>Group name<input value={groupName} onChange={(e) => setGroupName(e.target.value)} required /></label>
+            <label>Settlement currency<input value={groupCurrency} onChange={(e) => setGroupCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required /></label>
+            <label>Local currency<input value={groupLocalCurrency} onChange={(e) => setGroupLocalCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required /></label>
+            <div className="row settingsActions">
+              <button type="submit">Save</button>
+              <button type="button" className="link" onClick={() => setSettingsOpen(false)}>Cancel</button>
+              <button type="button" className="danger" onClick={deleteGroup}>Delete group</button>
+            </div>
+          </> : <p className="muted">Only the group creator can change settings or delete this group.</p>}
+        </form>
+      )}
       <div className={`overallLine ${mine >= 0 ? 'posText' : 'owe'}`}>
         {Math.abs(mine) < 0.005 ? 'You are settled up' : mine > 0 ? `You are owed ${money(mine)} overall` : `You owe ${money(-mine)} overall`}
       </div>

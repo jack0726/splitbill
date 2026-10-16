@@ -6,10 +6,13 @@
 // Callers must send their Supabase access token; for receipts they must be a member of the group (checked via RLS).
 
 type R2Object = { body: ReadableStream; httpEtag: string }
+type R2ListedObject = { key: string }
 type Env = {
   RECEIPTS: {
     put(key: string, value: ArrayBuffer, opts: { httpMetadata: { contentType: string } }): Promise<unknown>
     get(key: string): Promise<R2Object | null>
+    list(opts: { prefix: string; cursor?: string }): Promise<{ objects: R2ListedObject[]; truncated: boolean; cursor?: string }>
+    delete(keys: string[]): Promise<void>
   }
   ASSETS: { fetch(req: Request): Promise<Response> }
   SUPABASE_URL: string
@@ -77,7 +80,33 @@ export default {
     if (!m) return json({ error: 'Not found' }, 404)
     const [, groupId, file] = m
 
-    if (!token || !(await isMember(env, token, groupId))) return json({ error: 'Forbidden' }, 403)
+    const memberId = token ? await isMember(env, token, groupId) : null
+
+    if (req.method === 'DELETE' && !file) {
+      if (!token) return json({ error: 'Sign in to delete this group' }, 401)
+      try {
+        const headers = { apikey: env.SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }
+        const groupRes = await fetch(`${env.SUPABASE_URL}/rest/v1/groups?select=created_by&id=eq.${groupId}`, { headers })
+        if (!groupRes.ok) return json({ error: `Could not verify group ownership (Supabase returned ${groupRes.status})` }, 502)
+        const groups = (await groupRes.json()) as { created_by: string }[]
+        if (!groups[0]) return json({ error: 'Group not found or access denied' }, 404)
+        const callerId = await userId(env, token)
+        if (groups[0].created_by !== callerId) return json({ error: 'Only the group creator can delete it' }, 403)
+        let cursor: string | undefined
+        do {
+          const page = await env.RECEIPTS.list({ prefix: `${groupId}/`, cursor })
+          if (page.objects.length) await env.RECEIPTS.delete(page.objects.map((object) => object.key))
+          cursor = page.truncated ? page.cursor : undefined
+          if (page.truncated && !cursor) throw new Error('R2 returned a truncated page without a continuation cursor')
+        } while (cursor)
+        return json({ ok: true })
+      } catch (error) {
+        console.error('Receipt cleanup failed', error)
+        return json({ error: error instanceof Error ? `Receipt cleanup failed: ${error.message}` : 'Receipt cleanup failed in R2' }, 502)
+      }
+    }
+
+    if (!memberId) return json({ error: 'Forbidden' }, 403)
 
     if (req.method === 'PUT' && !file) {
       if (req.headers.get('Content-Type') !== 'image/jpeg') return json({ error: 'JPEG only' }, 415)

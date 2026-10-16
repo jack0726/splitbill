@@ -269,6 +269,9 @@ create policy "groups insert" on public.groups for insert to authenticated
 drop policy if exists "groups update" on public.groups;
 create policy "groups update" on public.groups for update to authenticated
   using (is_member(id)) with check (is_member(id));
+drop policy if exists "groups delete" on public.groups;
+create policy "groups delete" on public.groups for delete to authenticated
+  using (created_by = auth.uid());
 
 drop policy if exists "members read" on public.group_members;
 create policy "members read" on public.group_members for select to authenticated

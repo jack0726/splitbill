@@ -81,6 +81,19 @@ export async function uploadAvatar(blob: Blob): Promise<string> {
   return ((await res.json()) as { key: string }).key
 }
 
+export async function deleteGroupReceipts(groupId: string): Promise<void> {
+  const res = await fetch(`/api/receipts/${groupId}`, {
+    method: 'DELETE',
+    headers: await authHeader(),
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    let message = body
+    try { message = (JSON.parse(body) as { error?: string }).error ?? body } catch { /* show non-JSON Worker/proxy errors */ }
+    throw new Error(message || `Could not delete receipt attachments (HTTP ${res.status})`)
+  }
+}
+
 // <img> can't send the auth header, so fetch the bytes and hand back an object URL.
 const cache = new Map<string, string>()
 export async function receiptUrl(key: string): Promise<string> {

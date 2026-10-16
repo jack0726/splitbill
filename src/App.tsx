@@ -15,6 +15,27 @@ export default function App() {
   const [recovering, setRecovering] = useState(false)
   const [me, setMe] = useState<{ name: string; avatar_key: string | null } | null>(null)
   const [tick, setTick] = useState(0)
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const saved = localStorage.getItem('splitbill-theme')
+    return saved === 'dark' || saved === 'light' ? saved : 'light'
+  })
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('splitbill-theme', theme)
+  }, [theme])
+
+  const themeToggle = (
+    <button
+      className="themeToggle"
+      type="button"
+      onClick={() => setTheme((current) => current === 'light' ? 'dark' : 'light')}
+      aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+      title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+    >
+      {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
+    </button>
+  )
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -35,17 +56,18 @@ export default function App() {
   }, [uid, tick])
 
   if (!ready) return <p className="center muted">Loading…</p>
-  if (!session) return <Auth />
+  if (!session) return <><div className="themeControl">{themeToggle}</div><Auth /></>
   if (recovering) return <ResetPassword onDone={() => setRecovering(false)} />
 
   return (
     <>
       <header className="bar">
         <Link to="/" className="logo">SplitBill</Link>
-        <span className="barRight">
+        <div className="headerActions">
+          {themeToggle}
           <Link to="/profile"><Avatar name={me?.name ?? '?'} k={me?.avatar_key} size={28} /></Link>
           <button className="link" onClick={() => supabase.auth.signOut()}>Sign out</button>
-        </span>
+        </div>
       </header>
       <main>
         <Routes>

@@ -6,7 +6,7 @@ export const supabase = createClient(
 )
 
 export type Profile = { id: string; name: string; avatar_key?: string | null }
-export type Group = { id: string; name: string; currency: string; local_currency: string; invite_code: string }
+export type Group = { id: string; name: string; currency: string; local_currency: string; invite_code: string; created_by: string }
 export type Expense = {
   id: string
   group_id: string
