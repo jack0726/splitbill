@@ -5,10 +5,13 @@
 -- ───────────────────────── tables ─────────────────────────
 
 create table if not exists public.profiles (
-  id uuid primary key references auth.users on delete cascade,
+  id uuid primary key,
   name text not null,
   created_at timestamptz not null default now()
 );
+
+-- Profiles can also represent a guest who has no auth.users account.
+alter table public.profiles drop constraint if exists profiles_id_fkey;
 
 create table if not exists public.groups (
   id uuid primary key default gen_random_uuid(),
@@ -158,6 +161,25 @@ begin
   insert into group_members (group_id, user_id) values (gid, auth.uid())
     on conflict do nothing;
   return gid;
+end $$;
+
+-- Add a non-login guest profile to a group. Guests use normal profile IDs in expenses/splits.
+create or replace function public.add_guest_member(gid uuid, guest_name text, guest_avatar text default null)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare guest_id uuid := gen_random_uuid();
+begin
+  if auth.uid() is null or not exists (select 1 from groups where id = gid and created_by = auth.uid()) then
+    raise exception 'Only the group creator can add guest members';
+  end if;
+  if length(trim(coalesce(guest_name, ''))) = 0 or length(trim(guest_name)) > 60 then
+    raise exception 'Guest name must be between 1 and 60 characters';
+  end if;
+  if guest_avatar is not null and guest_avatar not in ('preset:lf-01','preset:lf-02','preset:lf-03','preset:lf-04','preset:lf-05','preset:lf-06','preset:lf-07','preset:lf-08') then
+    raise exception 'Invalid guest avatar';
+  end if;
+  insert into profiles (id, name, avatar_key) values (guest_id, trim(guest_name), guest_avatar);
+  insert into group_members (group_id, user_id) values (gid, guest_id);
+  return guest_id;
 end $$;
 
 -- full state of an expense (incl. splits) as json, used by the audit log
@@ -323,6 +345,7 @@ grant execute on function public.set_public_group_share(uuid, text) to authentic
 grant execute on function public.disable_public_group_share(uuid) to authenticated;
 grant execute on function public.get_public_group_share_id(uuid) to authenticated;
 grant execute on function public.read_public_group_share(uuid, text) to anon, authenticated;
+grant execute on function public.add_guest_member(uuid, text, text) to authenticated;
 
 -- ───────────────────────── row level security ─────────────────────────
 
