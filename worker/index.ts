@@ -17,6 +17,7 @@ type Env = {
   ASSETS: { fetch(req: Request): Promise<Response> }
   SUPABASE_URL: string
   SUPABASE_ANON_KEY: string
+  OPENAI_API_KEY?: string
 }
 
 const MAX_BYTES = 600 * 1024
@@ -25,6 +26,7 @@ const ROUTE = new RegExp(`^/api/receipts/(${UUID})(?:/(${UUID}\\.jpg))?$`)
 
 const AVATAR_ROUTE = new RegExp(`^/api/avatars(?:/(${UUID})/(${UUID}\.jpg))?$`)
 const MAX_AVATAR_BYTES = 200 * 1024
+const MAX_AVATAR_SOURCE_BYTES = 1024 * 1024
 
 const json = (body: unknown, status = 200) => Response.json(body, { status })
 
@@ -52,6 +54,44 @@ export default {
     if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(req)
 
     const token = req.headers.get('Authorization')?.replace(/^Bearer /, '')
+
+    if (url.pathname === '/api/avatar-generation') {
+      if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+      const uid = token ? await userId(env, token) : null
+      if (!uid) return json({ error: 'Please sign in to create an avatar' }, 401)
+      if (!env.OPENAI_API_KEY) return json({ error: 'Avatar generation is not configured on this server' }, 503)
+      if (req.headers.get('Content-Type') !== 'image/jpeg') return json({ error: 'Please send a JPEG photo' }, 415)
+      const image = await req.arrayBuffer()
+      if (image.byteLength === 0 || image.byteLength > MAX_AVATAR_SOURCE_BYTES) return json({ error: 'Photo must be smaller than 1 MB' }, 413)
+
+      const form = new FormData()
+      form.append('model', 'gpt-image-2.5-sunburst')
+      form.append('image[]', new File([image], 'selfie.jpg', { type: 'image/jpeg' }))
+      form.append('prompt', 'Turn the person in the reference photo into a friendly, polished illustrated profile avatar. Preserve their recognizable face, skin tone, hairstyle, and glasses if present. Show a centered head and shoulders portrait, facing forward, with a simple softly colored circular background. Clean modern 2D editorial illustration, crisp shapes, warm approachable expression. One person only. No text, no logos, no extra objects. Keep the entire head and shoulders inside the square frame.')
+      form.append('size', '1024x1024')
+      form.append('quality', 'low')
+      form.append('output_format', 'jpeg')
+      form.append('n', '1')
+
+      try {
+        const generated = await fetch('https://api.openai.com/v1/images/edits', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` },
+          body: form,
+        })
+        const result = (await generated.json().catch(() => null)) as { data?: { b64_json?: string }[]; error?: { message?: string } } | null
+        if (!generated.ok) {
+          console.error('Avatar generation request failed', generated.status)
+          return json({ error: result?.error?.message?.slice(0, 300) ?? 'Could not generate an avatar right now' }, 502)
+        }
+        const imageBase64 = result?.data?.[0]?.b64_json
+        if (!imageBase64) return json({ error: 'Avatar generation returned no image' }, 502)
+        return json({ image: imageBase64 })
+      } catch (error) {
+        console.error('Avatar generation request failed', error instanceof Error ? error.message : 'unknown error')
+        return json({ error: 'Could not reach the avatar generation service' }, 502)
+      }
+    }
 
     const a = AVATAR_ROUTE.exec(url.pathname)
     if (a) {

@@ -120,7 +120,36 @@ label.check input { width: auto; }
 .cropHandle { position: absolute; width: 28px; height: 28px; border-radius: 50%; background: var(--green); border: 3px solid #fff; box-sizing: border-box; }
 .cropBar { padding: 12px 16px; background: #111; }
 .cropBar .link { color: #fff; }
+.cameraCapture { position: fixed; inset: 0; z-index: 31; display: flex; flex-direction: column; background: #000; color: #fff; }
+.cameraPreview { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
+.cameraPreview video { max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; transform: scaleX(-1); }
+.cameraError { position: absolute; left: 16px; right: 16px; top: 16px; padding: 12px; border-radius: 8px; background: rgba(0, 0, 0, .7); text-align: center; }
+.cameraBar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px max(14px, env(safe-area-inset-bottom)); background: #111; }
+.cameraBar .link { color: #fff; }
 .receiptRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.avatarPickerHeading { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+.avatarPickerHeading h3, .avatarPickerHeading p { margin: 0; }
+.avatarPickerHeading p { margin-top: 4px; }
+.photoAvatar { border-top: 1px solid var(--border); padding-top: 12px; margin-bottom: 8px; }
+.photoAvatar h3, .photoAvatar p { margin: 4px 0 8px; }
+.photoConsent { align-items: flex-start !important; font-size: .85rem !important; }
+.photoConsent input { width: auto; flex: none; margin-top: 4px; }
+.photoAvatarActions { display: flex; gap: 8px; margin-top: 10px; }
+.photoAvatarActions button { flex: 1; }
+.photoAvatarActions .secondaryButton { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+.generatedAvatarPreview { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
+.generatedAvatarPreview img { width: 112px; height: 112px; object-fit: cover; border-radius: 50%; border: 1px solid var(--border); }
+.generatedAvatarPreview div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.avatarPicker { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 10px; }
+.avatarChoice { padding: 3px; border: 2px solid var(--border); border-radius: 50%; background: var(--card); cursor: pointer; aspect-ratio: 1; }
+.avatarChoice:hover { border-color: var(--green); }
+.avatarChoice.selected { border-color: var(--green); box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 25%, transparent); }
+.avatarChoice:disabled { opacity: .65; cursor: wait; }
+.avatarChoice img { width: 100%; height: 100%; display: block; border-radius: 50%; object-fit: cover; }
+.avatarPickerFooter { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-top: 14px; }
+.avatarCredits summary { cursor: pointer; }
+.avatarCredits ul { padding-left: 18px; line-height: 1.7; }
+.avatarCredits a { color: inherit; }
 .receiptThumb { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); cursor: zoom-in; }
 .receiptFull { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); }
 .viewer { position: fixed; inset: 0; z-index: 30; background: rgba(0, 0, 0, .9); display: flex; align-items: center; justify-content: center; overflow: auto; padding: 8px; }

@@ -81,6 +81,20 @@ export async function uploadAvatar(blob: Blob): Promise<string> {
   return ((await res.json()) as { key: string }).key
 }
 
+export async function generateAvatar(photo: Blob): Promise<Blob> {
+  const res = await fetch('/api/avatar-generation', {
+    method: 'POST',
+    headers: { ...(await authHeader()), 'Content-Type': 'image/jpeg' },
+    body: photo,
+  })
+  if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? 'Avatar generation failed')
+  const { image } = (await res.json()) as { image: string }
+  const binary = atob(image)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type: 'image/jpeg' })
+}
+
 export async function deleteGroupReceipts(groupId: string): Promise<void> {
   const res = await fetch(`/api/receipts/${groupId}`, {
     method: 'DELETE',
