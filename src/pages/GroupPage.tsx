@@ -8,6 +8,7 @@ import { netBalances, simplifyDebts, splitByWeights, splitEqually } from '../lib
 import { deleteGroupReceipts } from '../lib/receipt'
 import GroupIconPicker, { GroupIcon, GROUP_COLORS } from '../components/GroupIconPicker'
 import PayNowDialog from '../components/PayNowDialog'
+import Avatar from '../components/Avatar'
 
 type SplitMode = 'equal' | 'exact' | 'percent' | 'shares'
 
@@ -37,7 +38,7 @@ export default function GroupPage({ userId }: { userId: string }) {
   const load = useCallback(async () => {
     const [g, m, e, s, a] = await Promise.all([
       supabase.from('groups').select('*').eq('id', id).single(),
-      supabase.from('group_members').select('profiles(id,name,paynow_mobile)').eq('group_id', id),
+      supabase.from('group_members').select('profiles(id,name,avatar_key,paynow_mobile)').eq('group_id', id),
       supabase
         .from('expenses')
         .select('*, expense_splits(user_id, share)')
@@ -481,7 +482,6 @@ function ExpenseForm(p: {
   const [date, setDate] = useState(ex?.spent_on ?? new Date().toISOString().slice(0, 10))
   const [paidBy, setPaidBy] = useState(ex?.paid_by ?? p.userId)
   const [category, setCategory] = useState<string | null>(ex?.category ?? null)
-  const [advanced, setAdvanced] = useState(!!ex?.category)
   const [receipt, setReceipt] = useState<string | null>(ex?.receipt_key ?? null)
   const dateRef = useRef<HTMLInputElement>(null)
   // stored splits are in the settlement currency: exact amounts if unconverted, else proportional weights
@@ -575,8 +575,25 @@ function ExpenseForm(p: {
   return (
     <div className="modal" onClick={p.onClose}>
       <form className="card sheet" onClick={(e) => e.stopPropagation()} onSubmit={save}>
-        <h3>{ex ? 'Edit expense' : 'Add expense'}</h3>
-        <input placeholder="Description" value={desc} onChange={(e) => setDesc(e.target.value)} required />
+        <div className="expenseFormHeading">
+          <div className="expenseFormTitle">
+            <div className="expenseCategoryIcon" aria-hidden="true">{catEmoji(category) ?? '🧾'}</div>
+            <div><h3>{ex ? 'Edit expense' : 'Add expense'}</h3><span className="muted small">{p.group.name}</span></div>
+          </div>
+          <div className="dateField expenseDateField">
+            <button type="button" className="dateBtn" onClick={() => dateRef.current?.showPicker?.()}>
+              📅 {MONTHS[Number(date.slice(5, 7)) - 1]}-{date.slice(8, 10)}
+            </button>
+            <input ref={dateRef} className="dateHidden" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+          </div>
+        </div>
+        <div className="expenseCategoryPicker" aria-label="Expense category">
+          {CATEGORIES.map((c) => <button type="button" key={c.id} className={category === c.id ? 'selected' : ''} aria-label={c.label} title={c.label} onClick={() => setCategory(category === c.id ? null : c.id)}>{c.emoji}</button>)}
+        </div>
+        <div className="expensePrimaryFields">
+          <input className="expenseDescription" placeholder="What was this for?" value={desc} onChange={(e) => setDesc(e.target.value)} required />
+          <div className="expenseAmountField"><span>{entryCur}</span><input type="number" step="0.01" min="0" inputMode="decimal" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} required /></div>
+        </div>
         {hasFx && (
           <label>Currency
             <select value={entry} onChange={(e) => setEntry(e.target.value as 'local' | 'settlement')}>
@@ -585,7 +602,6 @@ function ExpenseForm(p: {
             </select>
           </label>
         )}
-        <input type="number" step="0.01" min="0" inputMode="decimal" placeholder={`Amount (${entryCur})`} value={amount} onChange={(e) => setAmount(e.target.value)} required />
         {foreign && (
           <div>
             <label>FX rate (1 {entryCur} = ? {settleCur})
@@ -614,12 +630,10 @@ function ExpenseForm(p: {
             {settleTotal > 0 && <small className="muted">≈ {settleTotal.toFixed(2)} {settleCur}</small>}
           </div>
         )}
-        <div className="dateField">
-          <button type="button" className="dateBtn" onClick={() => dateRef.current?.showPicker?.()}>
-            📅 {MONTHS[Number(date.slice(5, 7)) - 1]}-{date.slice(8, 10)}
-          </button>
-          <input ref={dateRef} className="dateHidden" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+        <div className="expenseMetaRow">
+        <ReceiptField groupId={p.group.id} value={receipt} onChange={setReceipt} />
         </div>
+        <section className="expenseSplitSection">
         <label>Paid by
           <select value={paidBy} onChange={(e) => setPaidBy(e.target.value)}>
             {p.members.map((m) => <option key={m.id} value={m.id}>{m.id === p.userId ? 'You' : m.name}</option>)}
@@ -633,32 +647,24 @@ function ExpenseForm(p: {
             <option value="shares">Shares</option>
           </select>
         </label>
-        {p.members.map((m) => (
-          <div key={m.id} className="row">
-            <label className="check">
-              <input type="checkbox" checked={!!included[m.id]} onChange={(e) => setIncluded({ ...included, [m.id]: e.target.checked })} />
-              {m.id === p.userId ? 'You' : m.name}
-            </label>
-            {mode !== 'equal' && included[m.id] && (
-              <span className="inline">
-                <input className="short" type="number" step="0.01" min="0" inputMode="decimal" value={vals[m.id] ?? ''} onChange={(e) => setVals({ ...vals, [m.id]: e.target.value })} />
-                {unit}
-              </span>
-            )}
-          </div>
-        ))}
-        <ReceiptField groupId={p.group.id} value={receipt} onChange={setReceipt} />
-        <button type="button" className="link" onClick={() => setAdvanced(!advanced)}>{advanced ? '▾' : '▸'} Advanced</button>
-        {advanced && (
-          <div className="cats">
-            {CATEGORIES.map((c) => (
-              <label key={c.id} className="check">
-                <input type="checkbox" checked={category === c.id} onChange={(e) => setCategory(e.target.checked ? c.id : null)} />
-                {c.emoji} {c.label}
-              </label>
-            ))}
-          </div>
-        )}
+        <div className="splitMembers">
+          {p.members.map((m) => {
+            const selected = !!included[m.id]
+            const name = m.id === p.userId ? 'You' : m.name
+            return (
+              <div key={m.id} className={`splitMember${selected ? ' selected' : ''}`}>
+                <button type="button" className="splitMemberChoice" aria-pressed={selected} onClick={() => setIncluded({ ...included, [m.id]: !selected })}>
+                  <span className="splitMemberAvatar"><Avatar name={name} k={m.avatar_key} size={52} /><span className="splitMemberCheck" aria-hidden="true">{selected ? '✓' : ''}</span></span>
+                  <span className="splitMemberName">{name}</span>
+                </button>
+                {mode !== 'equal' && selected && (
+                  <span className="splitMemberValue"><input aria-label={`${name} ${unit || 'amount'}`} type="number" step="0.01" min="0" inputMode="decimal" value={vals[m.id] ?? ''} onChange={(e) => setVals({ ...vals, [m.id]: e.target.value })} />{unit}</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        </section>
         {err && <p className="error">{err}</p>}
         <div className="row">
           <button type="button" className="link" onClick={p.onClose}>Cancel</button>

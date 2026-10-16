@@ -171,3 +171,34 @@ label.check input { width: auto; }
 
 .barRight { display: flex; align-items: center; gap: 8px; }
 .avatar { border-radius: 50%; object-fit: cover; display: flex; align-items: center; justify-content: center; font-weight: 700; flex: none; }
+
+/* Expense entry */
+.expenseFormHeading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0 8px; }
+.expenseFormTitle { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.expenseDateField { flex: none; }
+.expenseDateField .dateBtn { width: auto; white-space: nowrap; padding: 8px; font-size: .9rem; }
+.expenseFormHeading h3 { margin: 0; }
+.expenseCategoryIcon { width: 52px; height: 52px; display: grid; place-items: center; flex: none; border-radius: 14px; background: color-mix(in srgb, var(--green) 15%, var(--card)); font-size: 1.7rem; }
+.expenseCategoryPicker { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 8px; }
+.expenseCategoryPicker button { width: 42px; height: 42px; flex: none; padding: 0; background: var(--card); color: var(--text); border: 1px solid var(--border); font-size: 1.25rem; }
+.expenseCategoryPicker button.selected { border: 2px solid var(--green); background: color-mix(in srgb, var(--green) 12%, var(--card)); }
+.expensePrimaryFields { display: flex; flex-direction: column; gap: 8px; }
+.expenseDescription { font-size: 1.08rem; }
+.expenseAmountField { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 8px; padding-left: 12px; color: var(--muted); }
+.expenseAmountField input { border: 0; font-size: 1.4rem; font-weight: 700; padding-left: 0; }
+.expenseMetaRow { display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
+.expenseSplitSection { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.expenseSectionTitle { display: flex; flex-direction: column; gap: 2px; }
+.expenseSplitSection > label:not(.check) { gap: 6px; }
+.splitMembers { display: grid; grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); gap: 12px 8px; }
+.splitMember { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.splitMemberChoice { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; padding: 4px 2px; background: transparent; color: var(--text); font-weight: 400; }
+.splitMemberAvatar { position: relative; display: block; width: 58px; height: 58px; }
+.splitMemberAvatar .avatar { width: 52px !important; height: 52px !important; transition: filter .15s, opacity .15s; }
+.splitMember:not(.selected) .splitMemberAvatar .avatar { filter: grayscale(1); opacity: .42; }
+.splitMemberCheck { position: absolute; right: 0; bottom: 0; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--border); background: var(--card); color: transparent; font-size: .75rem; font-weight: 700; }
+.splitMember.selected .splitMemberCheck { border-color: var(--green); background: var(--green); color: #fff; }
+.splitMemberName { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; }
+.splitMemberValue { display: flex; align-items: center; gap: 3px; color: var(--muted); font-size: .78rem; }
+.splitMemberValue input { width: 74px; padding: 6px 4px; text-align: center; }
+@media (min-width: 480px) { .expenseMetaRow { flex-direction: row; align-items: center; justify-content: space-between; } }
