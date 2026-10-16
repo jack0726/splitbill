@@ -8,6 +8,7 @@ import { generateAvatar, loadImage, processAvatar, uploadAvatar } from '../lib/r
 
 export default function Profile({ user, onChanged }: { user: User; onChanged: () => void }) {
   const [name, setName] = useState('')
+  const [paynowMobile, setPaynowMobile] = useState('')
   const [avatar, setAvatar] = useState<string | null>(null)
   const [password, setPassword] = useState('')
   const [msg, setMsg] = useState('')
@@ -28,8 +29,8 @@ export default function Profile({ user, onChanged }: { user: User; onChanged: ()
   }, [generatedAvatar])
 
   useEffect(() => {
-    supabase.from('profiles').select('name, avatar_key').eq('id', user.id).single().then(({ data }) => {
-      if (data) { setName(data.name); setAvatar(data.avatar_key) }
+    supabase.from('profiles').select('name, avatar_key, paynow_mobile').eq('id', user.id).single().then(({ data }) => {
+      if (data) { setName(data.name); setAvatar(data.avatar_key); setPaynowMobile(data.paynow_mobile ?? '') }
     })
   }, [user.id])
 
@@ -44,6 +45,19 @@ export default function Profile({ user, onChanged }: { user: User; onChanged: ()
     if (error) return say('', error.message)
     say('Name saved')
     onChanged()
+  }
+
+  async function savePayNow(e: React.FormEvent) {
+    e.preventDefault()
+    const digits = paynowMobile.replace(/[\s()-]/g, '')
+    const normalized = digits ? (digits.startsWith('+65') ? digits : digits.startsWith('65') ? `+${digits}` : `+65${digits}`) : null
+    if (normalized && !/^\+65[89]\d{7}$/.test(normalized)) return say('', 'Enter a Singapore mobile number with 8 digits, starting with 8 or 9.')
+    setBusy(true)
+    const { error } = await supabase.from('profiles').update({ paynow_mobile: normalized }).eq('id', user.id)
+    setBusy(false)
+    if (error) return say('', error.message)
+    setPaynowMobile(normalized ?? '')
+    say(normalized ? 'PayNow number saved' : 'PayNow number removed')
   }
 
   async function chooseAvatar(key: string | null) {
@@ -174,6 +188,13 @@ export default function Profile({ user, onChanged }: { user: User; onChanged: ()
         <input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} required />
         <p className="muted small">{user.email}</p>
         <button disabled={busy}>Save name</button>
+      </form>
+
+      <form className="card" onSubmit={savePayNow}>
+        <h3>PayNow</h3>
+        <p className="muted small">Add your Singapore mobile number linked to PayNow. People settling up with you can scan a payment QR. Leave blank to skip.</p>
+        <label>Handphone number<input type="tel" inputMode="tel" autoComplete="tel" placeholder="9123 4567 or +65 9123 4567" value={paynowMobile} onChange={(e) => setPaynowMobile(e.target.value)} /></label>
+        <button disabled={busy}>Save PayNow number</button>
       </form>
 
       <form className="card" onSubmit={savePassword}>

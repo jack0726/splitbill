@@ -5,7 +5,7 @@ export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY,
 )
 
-export type Profile = { id: string; name: string; avatar_key?: string | null }
+export type Profile = { id: string; name: string; avatar_key?: string | null; paynow_mobile?: string | null }
 export type Group = { id: string; name: string; icon: string | null; icon_color: string | null; description: string | null; start_date: string | null; end_date: string | null; currency: string; local_currency: string; invite_code: string; created_by: string }
 export type Expense = {
   id: string
@@ -28,6 +28,7 @@ export type Settlement = {
   from_user: string
   to_user: string
   amount: number
+  receipt_key: string | null
   created_at: string
 }
 export type AuditEntry = {

@@ -57,6 +57,7 @@ create table if not exists public.settlements (
   from_user uuid not null references public.profiles(id),
   to_user uuid not null references public.profiles(id),
   amount numeric(12,2) not null check (amount > 0),
+  receipt_key text,
   created_at timestamptz not null default now()
 );
 
@@ -87,6 +88,8 @@ alter table public.expenses add column if not exists fx_rate numeric(18,8);  -- 
 alter table public.expenses add column if not exists updated_at timestamptz;
 alter table public.expenses add column if not exists category text;
 alter table public.profiles add column if not exists avatar_key text;        -- R2 object key: avatars/<user id>/<uuid>.jpg
+alter table public.profiles add column if not exists paynow_mobile text;    -- optional Singapore mobile proxy, stored in +65 format
+alter table public.settlements add column if not exists receipt_key text;   -- R2 key for proof of payment
 alter table public.expenses add column if not exists receipt_key text;       -- R2 object key: <group id>/<uuid>.jpg
 
 alter table public.audit_log add column if not exists details jsonb;      -- state after (or before, for deletes)
@@ -317,6 +320,10 @@ create policy "settlements read" on public.settlements for select to authenticat
 -- you can only settle your own debts (payer of the settlement must be the caller)
 drop policy if exists "settlements insert" on public.settlements;
 create policy "settlements insert" on public.settlements for insert to authenticated
+  with check (is_member(group_id) and from_user = auth.uid());
+drop policy if exists "settlements update own" on public.settlements;
+create policy "settlements update own" on public.settlements for update to authenticated
+  using (is_member(group_id) and from_user = auth.uid())
   with check (is_member(group_id) and from_user = auth.uid());
 drop policy if exists "settlements delete" on public.settlements;
 create policy "settlements delete" on public.settlements for delete to authenticated

@@ -7,6 +7,7 @@ import { fetchRate } from '../lib/fx'
 import { netBalances, simplifyDebts, splitByWeights, splitEqually } from '../lib/balances'
 import { deleteGroupReceipts } from '../lib/receipt'
 import GroupIconPicker, { GroupIcon, GROUP_COLORS } from '../components/GroupIconPicker'
+import PayNowDialog from '../components/PayNowDialog'
 
 type SplitMode = 'equal' | 'exact' | 'percent' | 'shares'
 
@@ -31,11 +32,12 @@ export default function GroupPage({ userId }: { userId: string }) {
   const [groupIconColor, setGroupIconColor] = useState<string | null>(null)
   const [groupCurrency, setGroupCurrency] = useState('')
   const [groupLocalCurrency, setGroupLocalCurrency] = useState('')
+  const [settling, setSettling] = useState<{ transfer: { from: string; to: string; amount: number }; recipient: Profile } | null>(null)
 
   const load = useCallback(async () => {
     const [g, m, e, s, a] = await Promise.all([
       supabase.from('groups').select('*').eq('id', id).single(),
-      supabase.from('group_members').select('profiles(id,name)').eq('group_id', id),
+      supabase.from('group_members').select('profiles(id,name,paynow_mobile)').eq('group_id', id),
       supabase
         .from('expenses')
         .select('*, expense_splits(user_id, share)')
@@ -71,7 +73,9 @@ export default function GroupPage({ userId }: { userId: string }) {
   const link = `${location.origin}/join/${group.invite_code}`
 
   async function settle(from: string, to: string, amount: number) {
-    await supabase.from('settlements').insert({ group_id: id, from_user: from, to_user: to, amount })
+    const { error } = await supabase.from('settlements').insert({ group_id: id, from_user: from, to_user: to, amount })
+    if (error) { alert(error.message); return }
+    setSettling(null)
     load()
   }
   async function revertPayment(s: Settlement) {
@@ -241,7 +245,10 @@ export default function GroupPage({ userId }: { userId: string }) {
           {transfers.map((t, i) => (
             <div key={i} className="card row">
               <span>{name(t.from)} → {name(t.to)}: <b>{money(t.amount)}</b></span>
-              {t.from === userId && <button onClick={() => settle(t.from, t.to, t.amount)}>Settle</button>}
+              {t.from === userId && <button onClick={() => {
+                const recipient = members.find((m) => m.id === t.to)
+                if (recipient) setSettling({ transfer: t, recipient })
+              }}>Settle</button>}
             </div>
           ))}
           <h3>Net balances</h3>
@@ -259,9 +266,14 @@ export default function GroupPage({ userId }: { userId: string }) {
               <h3>Payments made</h3>
               {settlements.map((s) => (
                 <div key={s.id} className="row small">
-                  <span className="muted">
-                    {name(s.from_user)} paid {name(s.to_user)} {money(s.amount)} · {s.created_at.slice(0, 10)}
-                  </span>
+                  <div className="settlementEntry">
+                    <span className="muted">{name(s.from_user)} paid {name(s.to_user)} {money(s.amount)} · {s.created_at.slice(0, 10)}</span>
+                    {s.receipt_key ? <ReceiptThumb k={s.receipt_key} /> : s.from_user === userId ? <><small className="muted">Add payment receipt (stored in monochrome).</small><ReceiptField groupId={group.id} value={null} onChange={async (key) => {
+                      const { error } = await supabase.from('settlements').update({ receipt_key: key }).eq('id', s.id)
+                      if (error) alert(error.message)
+                      load()
+                    }} /></> : null}
+                  </div>
                   <button className="link danger" onClick={() => revertPayment(s)}>Revert</button>
                 </div>
               ))}
@@ -269,6 +281,9 @@ export default function GroupPage({ userId }: { userId: string }) {
           )}
         </>
       )}
+
+      {settling && <PayNowDialog recipient={settling.recipient} amount={settling.transfer.amount} currency={group.currency}
+        onCancel={() => setSettling(null)} onPaid={() => void settle(settling.transfer.from, settling.transfer.to, settling.transfer.amount)} />}
 
       {tab === 'history' && (
         <>

@@ -90,6 +90,10 @@ label.check input { width: auto; }
 .chips button { background: var(--card); color: var(--text); border: 1px solid var(--border); white-space: nowrap; }
 .chips button.on { border-color: var(--green); color: var(--green); }
 .chips .settleBtn { background: var(--orange); color: #fff; border: 0; }
+.paynowDialog { align-items: center; text-align: center; }
+.paynowQr { width: 256px; max-width: 80vw; height: auto; margin: 0 auto; background: #fff; padding: 8px; border-radius: 8px; }
+.settlementEntry { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.settlementEntry .receiptRow { flex-wrap: wrap; }
 .timeline { margin: 8px 0 8px 6px; border-left: 2px solid var(--border); padding-left: 20px; }
 .tlDay { font-weight: 700; font-size: .9rem; margin: 18px 0 6px -20px; padding-left: 20px; }
 .tlItem { position: relative; padding: 8px 0 14px; display: flex; flex-direction: column; gap: 2px; }
