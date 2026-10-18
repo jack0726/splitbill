@@ -23,17 +23,28 @@ export default function Groups({ userId }: { userId: string }) {
   const nav = useNavigate()
 
   async function load() {
-    const { data } = await supabase.from('groups').select('*').order('created_at', { ascending: false })
-    const gs = (data as Group[]) ?? []
-    setGroups(gs)
-    const [e, st, m] = await Promise.all([
+    const cacheKey = `splitbill-groups-cache:${userId}`
+    type Cache = { groups?: Group[]; expenses?: Expense[]; settlements?: Settlement[]; members?: { group_id: string; profiles: Profile }[] }
+    let cache: Cache = {}
+    try { cache = JSON.parse(localStorage.getItem(cacheKey) ?? '{}') } catch { /* ignore malformed cache */ }
+    if (cache.groups) setGroups(cache.groups)
+    const [g, e, st, m] = await Promise.all([
+      supabase.from('groups').select('*').order('created_at', { ascending: false }),
       supabase.from('expenses').select('*, expense_splits(user_id, share)'),
       supabase.from('settlements').select('*'),
       supabase.from('group_members').select('group_id, profiles(id,name)'),
     ])
-    const exp = (e.data ?? []) as Expense[]
-    const set = (st.data ?? []) as Settlement[]
-    const mem = (m.data ?? []) as unknown as { group_id: string; profiles: Profile }[]
+    const gs = (g.data as Group[] | null) ?? cache.groups ?? []
+    const exp = (e.data as Expense[] | null) ?? cache.expenses ?? []
+    const set = (st.data as Settlement[] | null) ?? cache.settlements ?? []
+    const mem = (m.data as unknown as { group_id: string; profiles: Profile }[] | null) ?? cache.members ?? []
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify({
+        groups: g.data ?? cache.groups ?? [], expenses: e.data ?? cache.expenses ?? [],
+        settlements: st.data ?? cache.settlements ?? [], members: m.data ?? cache.members ?? [],
+      }))
+    } catch { /* cache is best effort */ }
+    setGroups(gs)
     const out: Record<string, Summary> = {}
     for (const g of gs) {
       const bal = netBalances(exp.filter((x) => x.group_id === g.id), set.filter((x) => x.group_id === g.id))

@@ -9,7 +9,7 @@ import { deleteGroupReceipts } from '../lib/receipt'
 import GroupIconPicker, { GroupIcon, GROUP_COLORS } from '../components/GroupIconPicker'
 import PayNowDialog from '../components/PayNowDialog'
 import Avatar, { AVATAR_PRESETS, presetAvatarKey } from '../components/Avatar'
-import { CalendarDays, Share2 } from 'lucide-react'
+import { CalendarDays, RefreshCw, Share2 } from 'lucide-react'
 import { asPendingExpense, pendingExpenses, queueExpense, subscribePending, syncPendingExpenses } from '../lib/offlineExpenses'
 
 type SplitMode = 'equal' | 'exact' | 'percent' | 'shares'
@@ -44,8 +44,23 @@ export default function GroupPage({ userId }: { userId: string }) {
   const [guestAvatar, setGuestAvatar] = useState<string | null>(null)
   const [settling, setSettling] = useState<{ transfer: { from: string; to: string; amount: number }; recipient: Profile } | null>(null)
   const [pendingVersion, setPendingVersion] = useState(0)
+  const [syncingPending, setSyncingPending] = useState(false)
+  const [pendingSyncMessage, setPendingSyncMessage] = useState('')
 
   const load = useCallback(async () => {
+    const cacheKey = `splitbill-group-cache:${userId}:${id}`
+    let cache: { group?: Group; members?: Profile[]; expenses?: Expense[]; settlements?: Settlement[]; audit?: AuditEntry[] } = {}
+    try { cache = JSON.parse(localStorage.getItem(cacheKey) ?? '{}') } catch { /* ignore malformed cache */ }
+    if (cache.group) {
+      setGroup(cache.group)
+      setMembers(cache.members ?? [])
+      const pending = pendingExpenses(id!, userId).map(asPendingExpense)
+      const saved = cache.expenses ?? []
+      setExpenses([...saved, ...pending.filter((local) => !saved.some((remote) => remote.id === local.id))]
+        .sort((a, b) => b.spent_on.localeCompare(a.spent_on) || b.created_at.localeCompare(a.created_at)))
+      setSettlements(cache.settlements ?? [])
+      setAudit(cache.audit ?? [])
+    }
     const [g, m, e, s, a] = await Promise.all([
       supabase.from('groups').select('*').eq('id', id).single(),
       supabase.from('group_members').select('profiles(id,name,avatar_key,paynow_mobile)').eq('group_id', id),
@@ -58,9 +73,6 @@ export default function GroupPage({ userId }: { userId: string }) {
       supabase.from('settlements').select('*').eq('group_id', id),
       supabase.from('audit_log').select('*').eq('group_id', id).order('created_at', { ascending: false }).limit(200),
     ])
-    const cacheKey = `splitbill-group-cache:${userId}:${id}`
-    let cache: { group?: Group; members?: Profile[]; expenses?: Expense[]; settlements?: Settlement[]; audit?: AuditEntry[] } = {}
-    try { cache = JSON.parse(localStorage.getItem(cacheKey) ?? '{}') } catch { /* ignore malformed cache */ }
     const groupData = (g.data as Group | null) ?? cache.group ?? null
     const memberData = m.data ? ((m.data as unknown as { profiles: Profile }[]).map((r) => r.profiles)) : cache.members ?? []
     const saved = (e.data as Expense[] | null) ?? cache.expenses ?? []
@@ -112,6 +124,22 @@ export default function GroupPage({ userId }: { userId: string }) {
     if (error) { alert(error.message); return }
     setSettling(null)
     load()
+  }
+  async function retryPendingSync() {
+    if (syncingPending) return
+    setSyncingPending(true)
+    setPendingSyncMessage('')
+    try {
+      await syncPendingExpenses(userId, id)
+      await load()
+      if (pendingExpenses(id!, userId).length > 0) {
+        setPendingSyncMessage(navigator.onLine ? 'Sync failed. Please try again.' : 'You are offline. Connect to the internet and try again.')
+      }
+    } catch {
+      setPendingSyncMessage('Sync failed. Please try again.')
+    } finally {
+      setSyncingPending(false)
+    }
   }
   async function revertPayment(s: Settlement) {
     if (!confirm(`Revert payment: ${name(s.from_user)} paid ${name(s.to_user)} ${money(s.amount)}?`)) return
@@ -204,7 +232,7 @@ export default function GroupPage({ userId }: { userId: string }) {
   return (
     <>
       <button className="groupTitle" onClick={() => void toggleGroupSettings()}><span className="groupIconBadge" style={{ background: group.icon_color || `hsl(${hue(group.name)} 60% 88%)`, color: GROUP_COLORS.find((c) => c.background === group.icon_color)?.foreground || `hsl(${hue(group.name)} 45% 30%)` }}><GroupIcon name={group.icon} size={21} /></span> {group.name} <span aria-hidden="true">⚙</span></button>
-      {pending.length > 0 && <p className="offlineNotice">{pending.length} {pending.length === 1 ? 'expense is' : 'expenses are'} saved on this device and waiting to sync.</p>}
+      {pending.length > 0 && <div className="offlineNotice"><button className="offlineSyncButton" type="button" onClick={() => void retryPendingSync()} disabled={syncingPending} aria-label="Retry syncing saved expenses" title="Retry sync"><RefreshCw size={17} className={syncingPending ? 'spinning' : ''} /></button><span>{pending.length} {pending.length === 1 ? 'expense is' : 'expenses are'} saved on this device and waiting to sync.{pendingSyncMessage && <><br /><span>{pendingSyncMessage}</span></>}</span></div>}
       {settingsOpen && (
         <section className="card groupSettings">
           <div className="settingsHeading"><div><h3>Group settings</h3><small className="muted">Manage your group in one place</small></div><button type="button" className="link" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>Close</button></div>
