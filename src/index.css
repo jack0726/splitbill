@@ -76,6 +76,18 @@ button.danger { color: var(--red); }
 .dangerPanel button { align-self: flex-start; padding: 9px 14px; background: color-mix(in srgb, var(--red) 12%, var(--card)); }
 @media (max-width: 380px) { .settingsTabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .card .row button { white-space: nowrap; }
+.expenseFiltersRow { position: relative; flex-wrap: nowrap; }
+.expenseFiltersRow > input { min-width: 0; flex: 1; }
+.expenseFiltersRow > select { min-width: 0; width: auto; flex: 0 1 auto; }
+.expenseDateFilterMenu { position: relative; flex: none; }
+.expenseDateFilterButton { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; padding: 0; border: 1px solid var(--border); background: var(--card); color: var(--text); }
+.expenseDateFilterButton.active { border-color: var(--green); color: var(--green); }
+.expenseDateFilterButton span { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--green); color: white; font-size: 11px; }
+.expenseDateFilters { position: absolute; z-index: 5; top: calc(100% + 8px); right: 0; width: min(300px, calc(100vw - 40px)); max-height: 300px; overflow-y: auto; margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); box-shadow: 0 6px 20px rgba(0, 0, 0, .16); }
+.expenseDateFilters legend { padding: 0 4px; color: var(--muted); font-size: .9rem; }
+.expenseDateOptions { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 8px 12px; }
+.expenseDateOptions label { display: flex; flex-direction: row; align-items: center; gap: 8px; color: var(--text); }
+.expenseDateOptions input { width: auto; margin: 0; accent-color: var(--green); }
 label { display: flex; flex-direction: column; gap: 4px; font-size: .9rem; color: var(--muted); }
 label.check { flex-direction: row; align-items: center; color: var(--text); gap: 8px; font-size: 1rem; }
 label.check input { width: auto; }
@@ -232,6 +244,8 @@ label.check input { width: auto; }
 .avatarPickerHeading { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
 .avatarPickerHeading h3, .avatarPickerHeading p { margin: 0; }
 .avatarPickerHeading p { margin-top: 4px; }
+.avatarGroup { margin-top: 16px; }
+.avatarGroup h4 { margin: 0 0 8px; color: var(--muted); font-size: .9rem; }
 .photoAvatar { border-top: 1px solid var(--border); padding-top: 12px; margin-bottom: 8px; }
 .photoAvatar h3, .photoAvatar p { margin: 4px 0 8px; }
 .photoConsent { align-items: flex-start !important; font-size: .85rem !important; }

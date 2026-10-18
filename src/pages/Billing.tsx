@@ -16,7 +16,7 @@ export default function Billing({ expenses, settlements, group, members, name }:
   name: (uid: string) => string
 }) {
   const cur = group.currency
-  const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const fmt = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
   const d = useMemo(() => {
     const total = expenses.reduce((a, e) => a + e.amount, 0)

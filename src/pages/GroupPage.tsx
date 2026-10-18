@@ -9,7 +9,7 @@ import { deleteGroupReceipts } from '../lib/receipt'
 import GroupIconPicker, { GroupIcon, GROUP_COLORS } from '../components/GroupIconPicker'
 import PayNowDialog from '../components/PayNowDialog'
 import Avatar, { AVATAR_PRESETS, presetAvatarKey } from '../components/Avatar'
-import { Share2 } from 'lucide-react'
+import { CalendarDays, Share2 } from 'lucide-react'
 
 type SplitMode = 'equal' | 'exact' | 'percent' | 'shares'
 
@@ -23,6 +23,8 @@ export default function GroupPage({ userId }: { userId: string }) {
   const [tab, setTab] = useState<'expenses' | 'balances' | 'billing' | 'history'>('expenses')
   const [audit, setAudit] = useState<AuditEntry[]>([])
   const [payer, setPayer] = useState('')
+  const [selectedDates, setSelectedDates] = useState<string[] | null>(null)
+  const [dateFilterOpen, setDateFilterOpen] = useState(false)
   const [newestFirst, setNewestFirst] = useState(true)
   const [query, setQuery] = useState('')
   const [adding, setAdding] = useState(false)
@@ -167,8 +169,9 @@ export default function GroupPage({ userId }: { userId: string }) {
     setShareUrl(data ? `${location.origin}/share/${data}` : '')
   }
   // transaction date, then the time it was entered
+  const availableDates = [...new Set(expenses.map((e) => e.spent_on))].sort((a, b) => b.localeCompare(a))
   const shown = expenses
-    .filter((e) => (!payer || e.paid_by === payer) && e.description.toLowerCase().includes(query.trim().toLowerCase()))
+    .filter((e) => (!payer || e.paid_by === payer) && (selectedDates === null || selectedDates.includes(e.spent_on)) && e.description.toLowerCase().includes(query.trim().toLowerCase()))
     .sort((a, b) => (a.spent_on + a.created_at).localeCompare(b.spent_on + b.created_at) * (newestFirst ? -1 : 1))
 
   return (
@@ -253,7 +256,7 @@ export default function GroupPage({ userId }: { userId: string }) {
           <button className="fab" onClick={() => setAdding(true)}>+ Add expense</button>
           {expenses.length === 0 && <p className="muted">No expenses yet.</p>}
           {expenses.length > 0 && (
-            <div className="row">
+            <div className="row expenseFiltersRow">
               <input placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} />
               <select value={payer} onChange={(e) => setPayer(e.target.value)}>
                 <option value="">Paid by: anyone</option>
@@ -263,6 +266,21 @@ export default function GroupPage({ userId }: { userId: string }) {
                 <option value="desc">Newest first</option>
                 <option value="asc">Oldest first</option>
               </select>
+              <div className="expenseDateFilterMenu">
+                <button type="button" className={`expenseDateFilterButton${selectedDates !== null ? ' active' : ''}`} aria-label="Filter by date" aria-expanded={dateFilterOpen} onClick={() => setDateFilterOpen(!dateFilterOpen)}><CalendarDays size={19} />{selectedDates !== null && <span>{selectedDates.length}</span>}</button>
+                {dateFilterOpen && <fieldset className="expenseDateFilters">
+                  <legend>Filter by date</legend>
+                  <div className="expenseDateOptions">
+                    {availableDates.map((date) => {
+                      const [year, month, day] = date.split('-')
+                      return <label key={date}><input type="checkbox" checked={selectedDates === null || selectedDates.includes(date)} onChange={(event) => {
+                        const next = selectedDates === null ? availableDates.filter((d) => d !== date) : event.target.checked ? [...selectedDates, date] : selectedDates.filter((d) => d !== date)
+                        setSelectedDates(next.length === availableDates.length ? null : next)
+                      }} />{`${MONTHS[Number(month) - 1]} ${Number(day)}, ${year}`}</label>
+                    })}
+                  </div>
+                </fieldset>}
+              </div>
             </div>
           )}
           {expenses.length > 0 && shown.length === 0 && <p className="muted">No matching expenses.</p>}

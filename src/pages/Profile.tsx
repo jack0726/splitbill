@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import Avatar, { AVATAR_PRESETS, presetAvatarKey } from '../components/Avatar'
+import Avatar, { AVATAR_GROUPS, AVATAR_PRESETS, presetAvatarKey } from '../components/Avatar'
 import CameraCapture from '../components/CameraCapture'
 import ReceiptCropper from '../components/ReceiptCropper'
 import { generateAvatar, loadImage, processAvatar, uploadAvatar } from '../lib/receipt'
@@ -87,13 +87,23 @@ export default function Profile({ user, onChanged }: { user: User; onChanged: ()
     try { setPhotoImg(await loadImage(file)) } catch { say('', 'Could not read that photo') }
   }
 
-  async function createFromPhoto(photo: Blob) {
+  async function useCroppedPhoto(photo: Blob) {
+    photoImg?.close()
     setPhotoImg(null)
     setBusy(true)
-    say('Creating your avatar…')
     try {
-      setGeneratedAvatar(await generateAvatar(photo))
-      say('Avatar preview ready. Choose Use this avatar to save it.')
+      if (photoConsent) {
+        say('Creating your avatar…')
+        setGeneratedAvatar(await generateAvatar(photo))
+        say('Avatar preview ready. Choose Use this avatar to save it.')
+      } else {
+        const key = await uploadAvatar(photo)
+        const { error } = await supabase.from('profiles').update({ avatar_key: key }).eq('id', user.id)
+        if (error) throw error
+        setAvatar(key)
+        say('Photo saved as your avatar')
+        onChanged()
+      }
     } catch (x) {
       say('', (x as Error).message)
     }
@@ -140,14 +150,14 @@ export default function Profile({ user, onChanged }: { user: User; onChanged: ()
         </div>
         <section className="photoAvatar">
           <h3>Create an avatar from a selfie</h3>
-          <p className="muted small">We’ll turn your cropped photo into an illustrated headshot. You can preview it before saving.</p>
+          <p className="muted small">Crop a photo to use it directly, or agree to send the crop to OpenAI to create an illustrated headshot.</p>
           <label className="check photoConsent">
             <input type="checkbox" checked={photoConsent} onChange={(e) => setPhotoConsent(e.target.checked)} />
-            <span>I agree to send my cropped photo to OpenAI to generate an avatar. Pizza saves the generated image only if I choose it. Image generation may incur API charges.</span>
+            <span>I agree to send my cropped photo to OpenAI to generate an avatar. The photo is sent only after cropping; image generation may incur API charges. If unchecked, the cropped photo is uploaded directly as my avatar.</span>
           </label>
           <div className="photoAvatarActions">
-            <button type="button" disabled={!photoConsent || busy} onClick={() => setCameraOpen(true)}>📷 Take a selfie</button>
-            <button type="button" className="secondaryButton" disabled={!photoConsent || busy} onClick={() => gallery.current?.click()}>Choose a photo</button>
+            <button type="button" disabled={busy} onClick={() => setCameraOpen(true)}>📷 Take a selfie</button>
+            <button type="button" className="secondaryButton" disabled={busy} onClick={() => gallery.current?.click()}>Choose a photo</button>
           </div>
           <input ref={gallery} type="file" accept="image/*" hidden onChange={pickedPhoto} />
           {busy && msg === 'Creating your avatar…' && <p className="muted small" role="status">Creating your avatar… This may take a little while.</p>}
@@ -156,31 +166,35 @@ export default function Profile({ user, onChanged }: { user: User; onChanged: ()
             <div><button type="button" disabled={busy} onClick={saveGeneratedAvatar}>Use this avatar</button><button type="button" className="link" disabled={busy} onClick={() => setGeneratedAvatar(null)}>Discard</button></div>
           </div>}
         </section>
-        <div className="avatarPicker" role="group" aria-label="Avatar choices">
-          {AVATAR_PRESETS.map((preset) => {
-            const selected = avatar === presetAvatarKey(preset.id)
-            return <button
-              key={preset.id}
-              type="button"
-              className={`avatarChoice${selected ? ' selected' : ''}`}
-              disabled={busy}
-              aria-label={`Choose ${preset.title} avatar`}
-              aria-pressed={selected}
-              title={preset.title}
-              onClick={() => chooseAvatar(presetAvatarKey(preset.id))}
-            ><img src={preset.src} alt="" /></button>
-          })}
-        </div>
+        {AVATAR_GROUPS.map((group) => <section className="avatarGroup" key={group} aria-label={`${group} avatars`}>
+          <h4>{group}</h4>
+          <div className="avatarPicker" role="group" aria-label={`${group} avatar choices`}>
+            {AVATAR_PRESETS.filter((preset) => preset.group === group).map((preset) => {
+              const selected = avatar === presetAvatarKey(preset.id)
+              return <button
+                key={preset.id}
+                type="button"
+                className={`avatarChoice${selected ? ' selected' : ''}`}
+                disabled={busy}
+                aria-label={`Choose ${preset.title}`}
+                aria-pressed={selected}
+                title={preset.title}
+                onClick={() => chooseAvatar(presetAvatarKey(preset.id))}
+              ><img src={preset.src} alt="" /></button>
+            })}
+          </div>
+        </section>)}
         <div className="avatarPickerFooter">
           <details className="avatarCredits muted small">
             <summary>Avatar credits and license</summary>
-            <ul>{AVATAR_PRESETS.map((preset) => <li key={preset.id}><a href={preset.url} target="_blank" rel="noreferrer">{preset.title}</a> by {preset.creator}</li>)}</ul>
+            <ul>{AVATAR_PRESETS.filter((preset) => preset.url).map((preset) => <li key={preset.id}><a href={preset.url} target="_blank" rel="noreferrer">{preset.title}</a> by {preset.creator}</li>)}</ul>
+            <p>Additional illustrated avatars created for Splitbill.</p>
             <a href="https://lottiefiles.com/page/license" target="_blank" rel="noreferrer">Lottie Simple License</a>
           </details>
           {avatar && <button type="button" className="link" disabled={busy} onClick={() => chooseAvatar(null)}>Use initial instead</button>}
         </div>
       </div>
-      {photoImg && <ReceiptCropper img={photoImg} square onDone={createFromPhoto} onCancel={() => setPhotoImg(null)} />}
+      {photoImg && <ReceiptCropper img={photoImg} square onDone={useCroppedPhoto} onCancel={() => { photoImg.close(); setPhotoImg(null) }} />}
       {cameraOpen && <CameraCapture onCaptured={openPhoto} onCancel={() => setCameraOpen(false)} />}
 
       <form className="card" onSubmit={saveName}>
