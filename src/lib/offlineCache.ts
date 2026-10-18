@@ -1,7 +1,6 @@
 import { supabase, type Expense, type Group, type Profile, type Settlement } from './supabase'
 
 type CachedMember = { group_id: string; profiles: Profile }
-type GroupsCache = { groups: Group[]; expenses: Expense[]; settlements: Settlement[]; members: CachedMember[] }
 
 async function allRows<T>(query: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>): Promise<T[]> {
   const rows: T[] = []
