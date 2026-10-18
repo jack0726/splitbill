@@ -204,16 +204,13 @@ begin
   if fields->>'receipt_key' is not null and fields->>'receipt_key' not like gid::text || '/%' then
     raise exception 'Invalid receipt';
   end if;
-  if xid is null then
-    insert into expenses (group_id, description, amount, paid_by, spent_on, local_amount, local_currency, fx_rate, category, receipt_key)
-    values (gid, fields->>'description', (fields->>'amount')::numeric, (fields->>'paid_by')::uuid,
+  if xid is null or not exists (select 1 from expenses where id = xid and group_id = gid) then
+    insert into expenses (id, group_id, description, amount, paid_by, spent_on, local_amount, local_currency, fx_rate, category, receipt_key)
+    values (coalesce(xid, gen_random_uuid()), gid, fields->>'description', (fields->>'amount')::numeric, (fields->>'paid_by')::uuid,
             (fields->>'spent_on')::date, (fields->>'local_amount')::numeric, fields->>'local_currency',
             (fields->>'fx_rate')::numeric, fields->>'category', fields->>'receipt_key')
     returning id into xid;
   else
-    if not exists (select 1 from expenses where id = xid and group_id = gid) then
-      raise exception 'Expense not found';
-    end if;
     old_d := expense_snapshot(xid);
     update expenses set description = fields->>'description', amount = (fields->>'amount')::numeric,
       paid_by = (fields->>'paid_by')::uuid, spent_on = (fields->>'spent_on')::date,
@@ -227,7 +224,7 @@ begin
   select xid, x.user_id, x.share from jsonb_to_recordset(splits) as x(user_id uuid, share numeric);
   new_d := expense_snapshot(xid);
   insert into audit_log (group_id, actor_id, action, entity, entity_id, summary, details, old_details)
-  values (gid, auth.uid(), case when eid is null then 'created' else 'updated' end, 'expense', xid,
+  values (gid, auth.uid(), case when old_d is null then 'created' else 'updated' end, 'expense', xid,
           new_d->>'description', new_d, old_d);
   return xid;
 end $$;

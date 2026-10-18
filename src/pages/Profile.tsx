@@ -5,6 +5,7 @@ import Avatar, { AVATAR_GROUPS, AVATAR_PRESETS, presetAvatarKey } from '../compo
 import CameraCapture from '../components/CameraCapture'
 import ReceiptCropper from '../components/ReceiptCropper'
 import { generateAvatar, loadImage, processAvatar, uploadAvatar } from '../lib/receipt'
+import { RefreshCw } from 'lucide-react'
 
 export default function Profile({ user, onChanged }: { user: User; onChanged: () => void }) {
   const [name, setName] = useState('')
@@ -14,6 +15,7 @@ export default function Profile({ user, onChanged }: { user: User; onChanged: ()
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [photoImg, setPhotoImg] = useState<ImageBitmap | null>(null)
   const [photoConsent, setPhotoConsent] = useState(false)
   const [generatedAvatar, setGeneratedAvatar] = useState<Blob | null>(null)
@@ -35,6 +37,23 @@ export default function Profile({ user, onChanged }: { user: User; onChanged: ()
   }, [user.id])
 
   function say(m: string, e = '') { setMsg(m); setErr(e) }
+
+  async function refreshApp() {
+    setRefreshing(true)
+    if ('serviceWorker' in navigator) {
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations()
+        await Promise.race([
+          Promise.all(registrations.map(async (registration) => {
+            await registration.update().catch(() => undefined)
+            registration.waiting?.postMessage({ type: 'SKIP_WAITING' })
+          })),
+          new Promise((resolve) => window.setTimeout(resolve, 3000)),
+        ])
+      } catch { /* still reload if service worker updates are unavailable */ }
+    }
+    window.location.reload()
+  }
 
   async function saveName(e: React.FormEvent) {
     e.preventDefault()
@@ -216,6 +235,11 @@ export default function Profile({ user, onChanged }: { user: User; onChanged: ()
         <input type="password" placeholder="New password (min 6 characters)" minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} required />
         <button disabled={busy}>Change password</button>
       </form>
+      <section className="card">
+        <h3>Website updates</h3>
+        <p className="muted small">Check for the latest version and reload the app. Your account and saved data will stay intact.</p>
+        <button type="button" disabled={refreshing} onClick={refreshApp}><RefreshCw size={16} /> {refreshing ? 'Checking for updates…' : 'Refresh website'}</button>
+      </section>
       {msg && <p className="posText">{msg}</p>}
       {err && <p className="error">{err}</p>}
     </>

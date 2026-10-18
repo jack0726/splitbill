@@ -24,7 +24,7 @@ const MAX_BYTES = 600 * 1024
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 const ROUTE = new RegExp(`^/api/receipts/(${UUID})(?:/(${UUID}\\.jpg))?$`)
 
-const AVATAR_ROUTE = new RegExp(`^/api/avatars(?:/(${UUID})/(${UUID}\.jpg))?$`)
+const AVATAR_ROUTE = new RegExp(`^/api/avatars(?:/(${UUID})/(${UUID}\\.jpg))?$`)
 const MAX_AVATAR_BYTES = 200 * 1024
 const MAX_AVATAR_SOURCE_BYTES = 1024 * 1024
 
@@ -103,7 +103,12 @@ export default {
         const bytes = await req.arrayBuffer()
         if (bytes.byteLength === 0 || bytes.byteLength > MAX_AVATAR_BYTES) return json({ error: 'Image too large' }, 413)
         const key = `avatars/${uid}/${crypto.randomUUID()}.jpg`
-        await env.RECEIPTS.put(key, bytes, { httpMetadata: { contentType: 'image/jpeg' } })
+        try {
+          await env.RECEIPTS.put(key, bytes, { httpMetadata: { contentType: 'image/jpeg' } })
+        } catch (error) {
+          console.error('Avatar upload to R2 failed', error instanceof Error ? error.message : 'unknown error')
+          return json({ error: 'Avatar storage failed. Please try again or contact support.' }, 502)
+        }
         return json({ key })
       }
       if (req.method === 'GET' && avatarFile) {

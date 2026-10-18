@@ -77,7 +77,12 @@ export async function uploadAvatar(blob: Blob): Promise<string> {
     headers: { ...(await authHeader()), 'Content-Type': 'image/jpeg' },
     body: blob,
   })
-  if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? 'Upload failed')
+  if (!res.ok) {
+    const body = await res.text()
+    let message = ''
+    try { message = (JSON.parse(body) as { error?: string }).error ?? '' } catch { /* Worker/platform errors may be plain text or HTML */ }
+    throw new Error(message || `Avatar upload failed (HTTP ${res.status})${body && !body.trimStart().startsWith('<') ? `: ${body.slice(0, 180)}` : ''}`)
+  }
   return ((await res.json()) as { key: string }).key
 }
 

@@ -10,6 +10,7 @@ import GroupIconPicker, { GroupIcon, GROUP_COLORS } from '../components/GroupIco
 import PayNowDialog from '../components/PayNowDialog'
 import Avatar, { AVATAR_PRESETS, presetAvatarKey } from '../components/Avatar'
 import { CalendarDays, Share2 } from 'lucide-react'
+import { asPendingExpense, pendingExpenses, queueExpense, subscribePending, syncPendingExpenses } from '../lib/offlineExpenses'
 
 type SplitMode = 'equal' | 'exact' | 'percent' | 'shares'
 
@@ -42,6 +43,7 @@ export default function GroupPage({ userId }: { userId: string }) {
   const [guestName, setGuestName] = useState('')
   const [guestAvatar, setGuestAvatar] = useState<string | null>(null)
   const [settling, setSettling] = useState<{ transfer: { from: string; to: string; amount: number }; recipient: Profile } | null>(null)
+  const [pendingVersion, setPendingVersion] = useState(0)
 
   const load = useCallback(async () => {
     const [g, m, e, s, a] = await Promise.all([
@@ -56,21 +58,45 @@ export default function GroupPage({ userId }: { userId: string }) {
       supabase.from('settlements').select('*').eq('group_id', id),
       supabase.from('audit_log').select('*').eq('group_id', id).order('created_at', { ascending: false }).limit(200),
     ])
-    setGroup(g.data as Group)
-    setMembers(((m.data ?? []) as unknown as { profiles: Profile }[]).map((r) => r.profiles))
-    setExpenses((e.data as Expense[]) ?? [])
-    setSettlements((s.data as Settlement[]) ?? [])
-    setAudit((a.data as AuditEntry[]) ?? [])
-  }, [id])
+    const cacheKey = `splitbill-group-cache:${userId}:${id}`
+    let cache: { group?: Group; members?: Profile[]; expenses?: Expense[]; settlements?: Settlement[]; audit?: AuditEntry[] } = {}
+    try { cache = JSON.parse(localStorage.getItem(cacheKey) ?? '{}') } catch { /* ignore malformed cache */ }
+    const groupData = (g.data as Group | null) ?? cache.group ?? null
+    const memberData = m.data ? ((m.data as unknown as { profiles: Profile }[]).map((r) => r.profiles)) : cache.members ?? []
+    const saved = (e.data as Expense[] | null) ?? cache.expenses ?? []
+    const settlementData = (s.data as Settlement[] | null) ?? cache.settlements ?? []
+    const auditData = (a.data as AuditEntry[] | null) ?? cache.audit ?? []
+    if (groupData) {
+      try { localStorage.setItem(cacheKey, JSON.stringify({ group: groupData, members: memberData, expenses: saved, settlements: settlementData, audit: auditData })) } catch { /* cache is best effort */ }
+    }
+    setGroup(groupData)
+    setMembers(memberData)
+    const pending = pendingExpenses(id!, userId).map(asPendingExpense)
+    setExpenses([...saved, ...pending.filter((local) => !saved.some((remote) => remote.id === local.id))]
+      .sort((a, b) => b.spent_on.localeCompare(a.spent_on) || b.created_at.localeCompare(a.created_at)))
+    setSettlements(settlementData)
+    setAudit(auditData)
+  }, [id, userId])
 
   useEffect(() => {
     load()
+    const refreshPending = () => setPendingVersion((version) => version + 1)
+    const unsubscribe = subscribePending(refreshPending)
+    const sync = () => { void syncPendingExpenses(userId, id).then(load) }
+    window.addEventListener('online', sync)
+    sync()
     const ch = supabase
       .channel(`group-${id}`)
       .on('postgres_changes', { event: '*', schema: 'public' }, () => load())
       .subscribe()
-    return () => { supabase.removeChannel(ch) }
-  }, [id, load])
+    return () => {
+      unsubscribe()
+      window.removeEventListener('online', sync)
+      supabase.removeChannel(ch)
+    }
+  }, [id, load, userId])
+
+  useEffect(() => { load() }, [pendingVersion, load])
 
   const name = (uid: string) => (uid === userId ? 'You' : members.find((m) => m.id === uid)?.name ?? '?')
   const bal = useMemo(() => netBalances(expenses, settlements), [expenses, settlements])
@@ -173,10 +199,12 @@ export default function GroupPage({ userId }: { userId: string }) {
   const shown = expenses
     .filter((e) => (!payer || e.paid_by === payer) && (selectedDates === null || selectedDates.includes(e.spent_on)) && e.description.toLowerCase().includes(query.trim().toLowerCase()))
     .sort((a, b) => (a.spent_on + a.created_at).localeCompare(b.spent_on + b.created_at) * (newestFirst ? -1 : 1))
+  const pending = pendingExpenses(id!, userId)
 
   return (
     <>
       <button className="groupTitle" onClick={() => void toggleGroupSettings()}><span className="groupIconBadge" style={{ background: group.icon_color || `hsl(${hue(group.name)} 60% 88%)`, color: GROUP_COLORS.find((c) => c.background === group.icon_color)?.foreground || `hsl(${hue(group.name)} 45% 30%)` }}><GroupIcon name={group.icon} size={21} /></span> {group.name} <span aria-hidden="true">⚙</span></button>
+      {pending.length > 0 && <p className="offlineNotice">{pending.length} {pending.length === 1 ? 'expense is' : 'expenses are'} saved on this device and waiting to sync.</p>}
       {settingsOpen && (
         <section className="card groupSettings">
           <div className="settingsHeading"><div><h3>Group settings</h3><small className="muted">Manage your group in one place</small></div><button type="button" className="link" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>Close</button></div>
@@ -302,7 +330,7 @@ export default function GroupPage({ userId }: { userId: string }) {
                     {catEmoji(e.category) ?? e.description.trim().charAt(0).toUpperCase()}
                   </div>
                   <div className="grow">
-                    <div className="title">{e.description}</div>
+                    <div className="title">{e.description}{pending.some((item) => item.id === e.id) && <span className="pendingBadge">Waiting to sync</span>}</div>
                     <div className="muted small">
                       {name(e.paid_by)} paid {money(e.amount)}
                       {e.local_amount != null && e.local_currency !== group.currency && (
@@ -650,8 +678,21 @@ function ExpenseForm(p: {
         category,
         receipt_key: receipt,
       }
+      if (!ex && !navigator.onLine) {
+        await queueExpense({ id: crypto.randomUUID(), groupId: p.group.id, userId: p.userId, fields: row, splits, savedAt: new Date().toISOString() })
+        p.onSaved()
+        return
+      }
       const { error } = await supabase.rpc('save_expense', { eid: ex?.id ?? null, gid: p.group.id, fields: row, splits })
-      if (error) throw error
+      if (error) {
+        const networkFailure = !navigator.onLine || /fetch|network|connection/i.test(error.message)
+        if (!ex && networkFailure) {
+          await queueExpense({ id: crypto.randomUUID(), groupId: p.group.id, userId: p.userId, fields: row, splits, savedAt: new Date().toISOString() })
+          p.onSaved()
+          return
+        }
+        throw error
+      }
       p.onSaved()
     } catch (x) {
       setErr((x as Error).message)

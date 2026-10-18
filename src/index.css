@@ -94,6 +94,8 @@ label.check input { width: auto; }
 .inline { display: flex; align-items: center; gap: 6px; }
 .short { width: 90px; }
 .muted { color: var(--muted); }
+.offlineNotice { margin: 4px 0 10px; padding: 9px 12px; border-radius: 8px; background: color-mix(in srgb, var(--green) 12%, var(--card)); color: var(--text); font-size: .9rem; }
+.pendingBadge { display: inline-block; margin-left: 7px; padding: 2px 6px; border-radius: 10px; background: color-mix(in srgb, var(--green) 16%, var(--card)); color: var(--muted); font-size: .72rem; font-weight: 500; vertical-align: middle; }
 .small { font-size: .85rem; }
 .right { text-align: right; }
 .error { color: var(--red); margin: 0; }
