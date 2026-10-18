@@ -368,7 +368,7 @@ export default function GroupPage({ userId }: { userId: string }) {
             return (
               <div key={e.id}>
                 {newMonth && <div className="month">{MONTHS[Number(month.slice(5)) - 1]} {month.slice(0, 4)}</div>}
-                <div className="exp clickable" onClick={() => setViewing(e)}>
+                <div className="exp clickable" onClick={() => setEditing(e)}>
                   <div className="date">
                     <span>{MONTHS[Number(e.spent_on.slice(5, 7)) - 1]}</span>
                     <span className="day">{e.spent_on.slice(8, 10)}</span>
@@ -810,11 +810,23 @@ function ExpenseForm(p: {
         <ReceiptField groupId={p.group.id} value={receipt} onChange={setReceipt} />
         </div>
         <section className="expenseSplitSection">
-        <label>Paid by
-          <select value={paidBy} onChange={(e) => setPaidBy(e.target.value)}>
-            {p.members.map((m) => <option key={m.id} value={m.id}>{m.id === p.userId ? 'You' : m.name}</option>)}
-          </select>
-        </label>
+        <div className="paidByPicker" role="group" aria-label="Paid by">
+          <span className="paidByLabel">Paid by</span>
+          <div className="splitMembers">
+            {p.members.map((m) => {
+              const selected = paidBy === m.id
+              const name = m.id === p.userId ? 'You' : m.name
+              return (
+                <div key={m.id} className={`splitMember${selected ? ' selected' : ''}`}>
+                  <button type="button" className="splitMemberChoice" aria-pressed={selected} onClick={() => setPaidBy(m.id)}>
+                    <span className="splitMemberAvatar"><Avatar name={name} k={m.avatar_key} size={52} /><span className="splitMemberCheck" aria-hidden="true">{selected ? '✓' : ''}</span></span>
+                    <span className="splitMemberName">{name}</span>
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
         <label>Split
           <select value={mode} onChange={(e) => setMode(e.target.value as SplitMode)}>
             <option value="equal">Equally</option>
