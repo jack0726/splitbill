@@ -11,6 +11,7 @@ export type PendingExpense = {
 }
 
 const key = 'splitbill-pending-expenses'
+let syncInProgress: Promise<void> | null = null
 
 function read(): PendingExpense[] {
   try {
@@ -45,17 +46,25 @@ export async function queueExpense(item: PendingExpense) {
 
 export async function syncPendingExpenses(userId: string, groupId?: string) {
   if (!navigator.onLine) return
-  const items = read()
-  for (const item of items) {
-    if (item.userId !== userId || (groupId && item.groupId !== groupId)) continue
-    const { error } = await supabase.rpc('save_expense', {
-      eid: item.id,
-      gid: item.groupId,
-      fields: item.fields,
-      splits: item.splits,
-    })
-    if (error) break
-    write(read().filter((existing) => existing.id !== item.id))
+  if (syncInProgress) return syncInProgress
+  syncInProgress = (async () => {
+    const items = read()
+    for (const item of items) {
+      if (item.userId !== userId || (groupId && item.groupId !== groupId)) continue
+      const { error } = await supabase.rpc('save_expense', {
+        eid: item.id,
+        gid: item.groupId,
+        fields: item.fields,
+        splits: item.splits,
+      })
+      if (error) throw new Error(error.message)
+      write(read().filter((existing) => existing.id !== item.id))
+    }
+  })()
+  try {
+    await syncInProgress
+  } finally {
+    syncInProgress = null
   }
 }
 

@@ -229,6 +229,8 @@ begin
   return xid;
 end $$;
 
+grant execute on function public.save_expense(uuid, uuid, jsonb, jsonb) to authenticated;
+
 -- log deletes with a snapshot taken before the splits cascade away
 create or replace function public.log_expense_delete()
 returns trigger language plpgsql security definer set search_path = public as $$

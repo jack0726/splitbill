@@ -112,7 +112,7 @@ export default function GroupPage({ userId }: { userId: string }) {
     load()
     const refreshPending = () => setPendingVersion((version) => version + 1)
     const unsubscribe = subscribePending(refreshPending)
-    const sync = () => { void syncPendingExpenses(userId, id).then(load) }
+    const sync = () => { void syncPendingExpenses(userId, id).then(load).catch(() => {}) }
     window.addEventListener('online', sync)
     sync()
     const ch = supabase
@@ -153,8 +153,9 @@ export default function GroupPage({ userId }: { userId: string }) {
       if (pendingExpenses(id!, userId).length > 0) {
         setPendingSyncMessage(navigator.onLine ? 'Sync failed. Please try again.' : 'You are offline. Connect to the internet and try again.')
       }
-    } catch {
-      setPendingSyncMessage('Sync failed. Please try again.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      setPendingSyncMessage(message ? `Sync failed: ${message}` : 'Sync failed. Please try again.')
     } finally {
       setSyncingPending(false)
     }
