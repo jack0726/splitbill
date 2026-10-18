@@ -10,6 +10,7 @@ import Profile from './pages/Profile'
 import Avatar from './components/Avatar'
 import PublicShare from './pages/PublicShare'
 import PizzaLoading from './components/PizzaLoading'
+import { refreshOfflineCache } from './lib/offlineCache'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
@@ -52,6 +53,14 @@ export default function App() {
   }, [])
 
   const uid = session?.user.id
+  useEffect(() => {
+    if (!uid) return
+    const refresh = () => { void refreshOfflineCache(uid).catch(() => {}) }
+    if (navigator.onLine) refresh()
+    window.addEventListener('online', refresh)
+    return () => window.removeEventListener('online', refresh)
+  }, [uid])
+
   useEffect(() => {
     if (!uid) return setMe(null)
     supabase.from('profiles').select('name, avatar_key').eq('id', uid).single().then(({ data }) => setMe(data))

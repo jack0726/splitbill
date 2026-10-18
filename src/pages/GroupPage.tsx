@@ -51,6 +51,23 @@ export default function GroupPage({ userId }: { userId: string }) {
     const cacheKey = `splitbill-group-cache:${userId}:${id}`
     let cache: { group?: Group; members?: Profile[]; expenses?: Expense[]; settlements?: Settlement[]; audit?: AuditEntry[] } = {}
     try { cache = JSON.parse(localStorage.getItem(cacheKey) ?? '{}') } catch { /* ignore malformed cache */ }
+    // The groups screen caches all group data, including groups that have never
+    // been opened on this device. Use that cache as a fallback for detail pages.
+    try {
+      const overview = JSON.parse(localStorage.getItem(`splitbill-groups-cache:${userId}`) ?? '{}') as {
+        groups?: Group[]
+        expenses?: Expense[]
+        settlements?: Settlement[]
+        members?: { group_id: string; profiles: Profile }[]
+      }
+      const overviewGroup = overview.groups?.find((group) => group.id === id)
+      if (!cache.group && overviewGroup) cache.group = overviewGroup
+      if (!cache.expenses && overview.expenses) cache.expenses = overview.expenses.filter((expense) => expense.group_id === id)
+      if (!cache.settlements && overview.settlements) cache.settlements = overview.settlements.filter((settlement) => settlement.group_id === id)
+      if (!cache.members && overview.members) cache.members = overview.members
+        .filter((member) => member.group_id === id)
+        .map((member) => member.profiles)
+    } catch { /* ignore malformed overview cache */ }
     if (cache.group) {
       setGroup(cache.group)
       setMembers(cache.members ?? [])
@@ -61,6 +78,7 @@ export default function GroupPage({ userId }: { userId: string }) {
       setSettlements(cache.settlements ?? [])
       setAudit(cache.audit ?? [])
     }
+    if (!navigator.onLine) return
     const [g, m, e, s, a] = await Promise.all([
       supabase.from('groups').select('*').eq('id', id).single(),
       supabase.from('group_members').select('profiles(id,name,avatar_key,paynow_mobile)').eq('group_id', id),
