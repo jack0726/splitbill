@@ -4,6 +4,10 @@ A free, self-hosted Splitwise-style app for splitting expenses with friends. Ins
 
 **Stack:** Vite + React + TypeScript · Supabase (Postgres, auth, realtime) · Cloudflare Workers (hosting). All on free tiers.
 
+## Versioning
+
+The app uses semantic versioning in `package.json` (`major.minor.patch`); the header displays this version. Every push to `main` automatically increments the patch number, updates `package.json` and `package-lock.json`, and records the pushed commit and date in [`VERSIONS.md`](VERSIONS.md). Major and minor releases are intentional changes: update the version before pushing when the release should increment either of those numbers. The version workflow creates a follow-up commit, which also deploys the versioned app.
+
 ## Features
 
 - Email/password sign-up and sign-in

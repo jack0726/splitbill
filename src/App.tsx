@@ -52,6 +52,30 @@ export default function App() {
     return () => data.subscription.unsubscribe()
   }, [])
 
+  // iOS Safari can leave an installed PWA open for long periods without
+  // checking its service worker for a new deployment. Check when the app
+  // returns to the foreground and periodically while it remains open.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    const checkForAppUpdate = () => {
+      if (document.visibilityState !== 'visible' || !navigator.onLine) return
+      void navigator.serviceWorker.getRegistrations().then((registrations) =>
+        Promise.all(registrations.map((registration) => registration.update().catch(() => undefined))),
+      ).catch(() => undefined)
+    }
+    document.addEventListener('visibilitychange', checkForAppUpdate)
+    window.addEventListener('focus', checkForAppUpdate)
+    window.addEventListener('online', checkForAppUpdate)
+    const interval = window.setInterval(checkForAppUpdate, 30 * 60 * 1000)
+    checkForAppUpdate()
+    return () => {
+      document.removeEventListener('visibilitychange', checkForAppUpdate)
+      window.removeEventListener('focus', checkForAppUpdate)
+      window.removeEventListener('online', checkForAppUpdate)
+      window.clearInterval(interval)
+    }
+  }, [])
+
   const uid = session?.user.id
   useEffect(() => {
     if (!uid) return
@@ -74,7 +98,7 @@ export default function App() {
   return (
     <>
       <header className="bar">
-        <Link to="/" className="logo"><img src="/icon.svg" alt="" />Pizza</Link>
+        <Link to="/" className="logo"><img src="/icon.svg" alt="" /><span>Pizza</span><span className="appVersion">v{__APP_VERSION__}</span></Link>
         <div className="headerActions">
           {themeToggle}
           <Link to="/profile"><Avatar name={me?.name ?? '?'} k={me?.avatar_key} size={28} /></Link>
