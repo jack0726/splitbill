@@ -9,7 +9,7 @@ import { deleteGroupReceipts } from '../lib/receipt'
 import GroupIconPicker, { GroupIcon, GROUP_COLORS } from '../components/GroupIconPicker'
 import PayNowDialog from '../components/PayNowDialog'
 import Avatar, { AVATAR_PRESETS, presetAvatarKey } from '../components/Avatar'
-import { CalendarDays, RefreshCw, Share2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, CalendarDays, RefreshCw, Share2, UserRound } from 'lucide-react'
 import { asPendingExpense, pendingExpenses, queueExpense, subscribePending, syncPendingExpenses } from '../lib/offlineExpenses'
 
 type SplitMode = 'equal' | 'exact' | 'percent' | 'shares'
@@ -21,9 +21,10 @@ export default function GroupPage({ userId }: { userId: string }) {
   const [members, setMembers] = useState<Profile[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [settlements, setSettlements] = useState<Settlement[]>([])
-  const [tab, setTab] = useState<'expenses' | 'balances' | 'billing' | 'history'>('expenses')
+  const [tab, setTab] = useState<'expenses' | 'settle' | 'billing' | 'history'>('expenses')
   const [audit, setAudit] = useState<AuditEntry[]>([])
   const [payer, setPayer] = useState('')
+  const [payerFilterOpen, setPayerFilterOpen] = useState(false)
   const [selectedDates, setSelectedDates] = useState<string[] | null>(null)
   const [dateFilterOpen, setDateFilterOpen] = useState(false)
   const [newestFirst, setNewestFirst] = useState(true)
@@ -38,6 +39,8 @@ export default function GroupPage({ userId }: { userId: string }) {
   const [groupIconColor, setGroupIconColor] = useState<string | null>(null)
   const [groupCurrency, setGroupCurrency] = useState('')
   const [groupLocalCurrency, setGroupLocalCurrency] = useState('')
+  const [groupStartDate, setGroupStartDate] = useState('')
+  const [groupEndDate, setGroupEndDate] = useState('')
   const [sharePin, setSharePin] = useState('')
   const [shareUrl, setShareUrl] = useState('')
   const [guestName, setGuestName] = useState('')
@@ -193,7 +196,7 @@ export default function GroupPage({ userId }: { userId: string }) {
     event.preventDefault()
     if (!group) return
     const { error } = await supabase.from('groups').update({
-      name: groupName.trim(), icon: groupIcon, icon_color: groupIconColor, currency: groupCurrency.toUpperCase(), local_currency: groupLocalCurrency.toUpperCase(),
+      name: groupName.trim(), icon: groupIcon, icon_color: groupIconColor, currency: groupCurrency.toUpperCase(), local_currency: groupLocalCurrency.toUpperCase(), start_date: groupStartDate || null, end_date: groupEndDate || null,
     }).eq('id', group.id)
     if (error) return alert(error.message)
     setSettingsOpen(false)
@@ -236,6 +239,8 @@ export default function GroupPage({ userId }: { userId: string }) {
     setGroupIconColor(currentGroup.icon_color)
     setGroupCurrency(currentGroup.currency)
     setGroupLocalCurrency(currentGroup.local_currency)
+    setGroupStartDate(currentGroup.start_date ?? '')
+    setGroupEndDate(currentGroup.end_date ?? '')
     setSharePin('')
     const { data, error } = await supabase.rpc('get_public_group_share_id', { gid: currentGroup.id })
     if (error) return alert(error.message)
@@ -250,7 +255,7 @@ export default function GroupPage({ userId }: { userId: string }) {
 
   return (
     <>
-      <button className="groupTitle" onClick={() => void toggleGroupSettings()}><span className="groupIconBadge" style={{ background: group.icon_color || `hsl(${hue(group.name)} 60% 88%)`, color: GROUP_COLORS.find((c) => c.background === group.icon_color)?.foreground || `hsl(${hue(group.name)} 45% 30%)` }}><GroupIcon name={group.icon} size={21} /></span> {group.name} <span aria-hidden="true">⚙</span></button>
+      <button className="groupTitle" onClick={() => void toggleGroupSettings()}><span className="groupIconBadge" style={{ background: group.icon_color || `hsl(${hue(group.name)} 60% 88%)`, color: GROUP_COLORS.find((c) => c.background === group.icon_color)?.foreground || `hsl(${hue(group.name)} 45% 30%)` }}><GroupIcon name={group.icon} size={21} /></span> {group.name}{(group.start_date || group.end_date) && <span className="groupTitleDates">· {[group.start_date, group.end_date].filter(Boolean).map((date) => formatGroupDate(date!)).join(' – ')}</span>} <span aria-hidden="true">⚙</span></button>
       {pending.length > 0 && <div className="offlineNotice"><button className="offlineSyncButton" type="button" onClick={() => void retryPendingSync()} disabled={syncingPending} aria-label="Retry syncing saved expenses" title="Retry sync"><RefreshCw size={17} className={syncingPending ? 'spinning' : ''} /></button><span>{pending.length} {pending.length === 1 ? 'expense is' : 'expenses are'} saved on this device and waiting to sync.{pendingSyncMessage && <><br /><span>{pendingSyncMessage}</span></>}</span></div>}
       {settingsOpen && (
         <section className="card groupSettings">
@@ -263,6 +268,8 @@ export default function GroupPage({ userId }: { userId: string }) {
             <h4>Group details</h4>
             <label>Group name<input value={groupName} onChange={(e) => setGroupName(e.target.value)} required /></label>
             <GroupIconPicker value={groupIcon} onChange={setGroupIcon} color={groupIconColor} onColorChange={setGroupIconColor} />
+            <label>Start date<input type="date" value={groupStartDate} onChange={(e) => { setGroupStartDate(e.target.value); if (groupEndDate && e.target.value && groupEndDate < e.target.value) setGroupEndDate('') }} /></label>
+            <label>End date<input type="date" value={groupEndDate} min={groupStartDate || undefined} onChange={(e) => setGroupEndDate(e.target.value)} /></label>
             <div className="settingsCurrencyGrid"><label>Settlement currency<input value={groupCurrency} onChange={(e) => setGroupCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required /></label><label>Local currency<input value={groupLocalCurrency} onChange={(e) => setGroupLocalCurrency(e.target.value.toUpperCase())} maxLength={3} minLength={3} required /></label></div>
             <div className="row settingsActions"><button type="submit">Save changes</button><button type="button" className="link" onClick={() => setSettingsOpen(false)}>Cancel</button></div>
             </> : <p className="muted">Only the group creator can change group details.</p>}
@@ -317,9 +324,8 @@ export default function GroupPage({ userId }: { userId: string }) {
       ))}
 
       <div className="chips">
-        <button className="settleBtn" onClick={() => setTab('balances')}>Settle up</button>
+        <button className={`settleBtn${tab === 'settle' ? ' on' : ''}`} onClick={() => setTab('settle')}>Settle up</button>
         <button className={tab === 'expenses' ? 'on' : ''} onClick={() => setTab('expenses')}>Expenses</button>
-        <button className={tab === 'balances' ? 'on' : ''} onClick={() => setTab('balances')}>Balances</button>
         <button className={tab === 'billing' ? 'on' : ''} onClick={() => setTab('billing')}>Billing</button>
         <button className={tab === 'history' ? 'on' : ''} onClick={() => setTab('history')}>History</button>
       </div>
@@ -333,14 +339,22 @@ export default function GroupPage({ userId }: { userId: string }) {
           {expenses.length > 0 && (
             <div className="row expenseFiltersRow">
               <input placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} />
-              <select value={payer} onChange={(e) => setPayer(e.target.value)}>
-                <option value="">Paid by: anyone</option>
-                {members.map((m) => <option key={m.id} value={m.id}>{name(m.id)}</option>)}
-              </select>
-              <select value={newestFirst ? 'desc' : 'asc'} onChange={(e) => setNewestFirst(e.target.value === 'desc')}>
-                <option value="desc">Newest first</option>
-                <option value="asc">Oldest first</option>
-              </select>
+              <div className="expenseDateFilterMenu">
+                <button type="button" className={`expenseDateFilterButton${payer ? ' active' : ''}`} aria-label="Filter by person" title="Filter by person" aria-expanded={payerFilterOpen} onClick={() => setPayerFilterOpen(!payerFilterOpen)}><UserRound size={19} /></button>
+                {payerFilterOpen && <div className="expensePeopleFilters" role="group" aria-label="Filter by person">
+                  <div className="expensePeopleHeader"><strong>Paid by</strong><button type="button" className={`expensePersonChoice${payer === '' ? ' selected' : ''}`} aria-pressed={payer === ''} onClick={() => setPayer('')}>Anyone</button></div>
+                  <div className="expensePeopleOptions">
+                    {members.map((m) => {
+                      const selected = payer === m.id
+                      const dimmed = payer !== '' && !selected
+                      return <button key={m.id} type="button" className={`expensePersonAvatar${selected ? ' selected' : ''}${dimmed ? ' dimmed' : ''}`} aria-label={name(m.id)} aria-pressed={selected} title={name(m.id)} onClick={() => setPayer(selected ? '' : m.id)}><Avatar name={name(m.id)} k={m.avatar_key} size={40} /><span>{name(m.id)}</span></button>
+                    })}
+                  </div>
+                </div>}
+              </div>
+              <button type="button" className="expenseSortButton" aria-label={newestFirst ? 'Newest first' : 'Oldest first'} title={newestFirst ? 'Newest first' : 'Oldest first'} onClick={() => setNewestFirst(!newestFirst)}>
+                {newestFirst ? <ArrowDown size={18} /> : <ArrowUp size={18} />}
+              </button>
               <div className="expenseDateFilterMenu">
                 <button type="button" className={`expenseDateFilterButton${selectedDates !== null ? ' active' : ''}`} aria-label="Filter by date" aria-expanded={dateFilterOpen} onClick={() => setDateFilterOpen(!dateFilterOpen)}><CalendarDays size={19} />{selectedDates !== null && <span>{selectedDates.length}</span>}</button>
                 {dateFilterOpen && <fieldset className="expenseDateFilters">
@@ -378,8 +392,9 @@ export default function GroupPage({ userId }: { userId: string }) {
                   </div>
                   <div className="grow">
                     <div className="title">{e.description}{pending.some((item) => item.id === e.id) && <span className="pendingBadge">Waiting to sync</span>}</div>
-                    <div className="muted small">
-                      {name(e.paid_by)} paid {money(e.amount)}
+                    <div className="muted small expensePayer">
+                      <Avatar name={name(e.paid_by)} k={members.find((m) => m.id === e.paid_by)?.avatar_key} size={20} />
+                      <span>{name(e.paid_by)} paid {money(e.amount)}</span>
                       {e.local_amount != null && e.local_currency !== group.currency && (
                         <> · {e.local_amount.toFixed(2)} {e.local_currency} @ {e.fx_rate}</>
                       )}
@@ -402,7 +417,7 @@ export default function GroupPage({ userId }: { userId: string }) {
         </>
       )}
 
-      {tab === 'balances' && (
+      {tab === 'settle' && (
         <>
           <h3>Who owes who</h3>
           {transfers.length === 0 && <p className="muted">Everyone is settled up 🎉</p>}
@@ -581,11 +596,17 @@ export const CATEGORIES = [
   { id: 'stay', emoji: '🏨', label: 'Stay' },
   { id: 'activities', emoji: '🎟️', label: 'Tickets & Activities' },
   { id: 'shopping', emoji: '🛍️', label: 'Shopping' },
+  { id: 'souvenirs', emoji: '🎁', label: 'Souvenirs & Gifts' },
+  { id: 'tips', emoji: '💸', label: 'Tips' },
   { id: 'fuel', emoji: '⛽', label: 'Petrol & Toll' },
   { id: 'other', emoji: '📦', label: 'Other' },
 ]
 const catEmoji = (id: string | null | undefined) => CATEGORIES.find((c) => c.id === id)?.emoji
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const formatGroupDate = (date: string) => {
+  const [year, month, day] = date.split('-').map(Number)
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+}
 // stable pastel colour per description for the row tile
 export const hue = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
 
@@ -645,6 +666,8 @@ function ExpenseForm(p: {
   const [date, setDate] = useState(ex?.spent_on ?? new Date().toISOString().slice(0, 10))
   const [paidBy, setPaidBy] = useState(ex?.paid_by ?? p.userId)
   const [category, setCategory] = useState<string | null>(ex?.category ?? null)
+  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null)
+  const [categoryTooltip, setCategoryTooltip] = useState<{ left: number; top: number } | null>(null)
   const [receipt, setReceipt] = useState<string | null>(ex?.receipt_key ?? null)
   const dateRef = useRef<HTMLInputElement>(null)
   // stored splits are in the settlement currency: exact amounts if unconverted, else proportional weights
@@ -764,8 +787,17 @@ function ExpenseForm(p: {
           </div>
         </div>
         <div className="expenseCategoryPicker" aria-label="Expense category">
-          {CATEGORIES.map((c) => <button type="button" key={c.id} className={category === c.id ? 'selected' : ''} aria-label={c.label} title={c.label} onClick={() => setCategory(category === c.id ? null : c.id)}>{c.emoji}</button>)}
+          {CATEGORIES.map((c) => {
+            const showTooltip = (element: HTMLButtonElement) => {
+              const rect = element.getBoundingClientRect()
+              setHoveredCategory(c.id)
+              setCategoryTooltip({ left: rect.left + rect.width / 2, top: rect.bottom + 7 })
+            }
+            const hideTooltip = () => { setHoveredCategory(null); setCategoryTooltip(null) }
+            return <button type="button" key={c.id} className={category === c.id ? 'selected' : ''} aria-label={c.label} onMouseEnter={(e) => showTooltip(e.currentTarget)} onMouseLeave={hideTooltip} onFocus={(e) => showTooltip(e.currentTarget)} onBlur={hideTooltip} onClick={() => setCategory(category === c.id ? null : c.id)}>{c.emoji}</button>
+          })}
         </div>
+        {hoveredCategory && categoryTooltip && <div className="expenseCategoryTooltip" role="tooltip" style={{ left: categoryTooltip.left, top: categoryTooltip.top }}>{CATEGORIES.find((c) => c.id === hoveredCategory)?.label}</div>}
         <div className="expensePrimaryFields">
           <input className="expenseDescription" placeholder="What was this for?" value={desc} onChange={(e) => setDesc(e.target.value)} required />
           <div className="expenseAmountField"><span>{entryCur}</span><input type="number" step="0.01" min="0" inputMode="decimal" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} required /></div>

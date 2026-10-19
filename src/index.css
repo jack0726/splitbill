@@ -43,6 +43,7 @@ button.link { background: none; color: var(--muted); font-weight: 400; padding: 
 .bar .link { color: #fff; }
 button.danger { color: var(--red); }
 .groupTitle { display: flex; align-items: center; gap: 8px; padding: 4px 0; margin: 0 0 4px; background: transparent; color: var(--text); font-size: 1.5rem; font-weight: 700; }
+.groupTitleDates { color: var(--muted); font-size: .78rem; font-weight: 400; }
 .groupIconBadge { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; flex: none; }
 .iconPicker { border: 0; padding: 0; margin: 4px 0; }
 .iconPicker legend { color: var(--muted); font-size: .9rem; margin-bottom: 6px; }
@@ -79,6 +80,8 @@ button.danger { color: var(--red); }
 .expenseFiltersRow { position: relative; flex-wrap: nowrap; }
 .expenseFiltersRow > input { min-width: 0; flex: 1; }
 .expenseFiltersRow > select { min-width: 0; width: auto; flex: 0 1 auto; }
+.expenseFiltersRow > .expenseSortButton { flex: none; display: grid; place-items: center; width: 38px; min-width: 38px; height: 38px; padding: 0; }
+.expensePayer { display: flex; align-items: center; gap: 6px; }
 .expenseDateFilterMenu { position: relative; flex: none; }
 .expenseDateFilterButton { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; padding: 0; border: 1px solid var(--border); background: var(--card); color: var(--text); }
 .expenseDateFilterButton.active { border-color: var(--green); color: var(--green); }
@@ -88,6 +91,15 @@ button.danger { color: var(--red); }
 .expenseDateOptions { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 8px 12px; }
 .expenseDateOptions label { display: flex; flex-direction: row; align-items: center; gap: 8px; color: var(--text); }
 .expenseDateOptions input { width: auto; margin: 0; accent-color: var(--green); }
+.expensePeopleFilters { position: absolute; z-index: 5; top: calc(100% + 8px); right: 0; width: min(260px, calc(100vw - 40px)); margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); box-shadow: 0 6px 20px rgba(0, 0, 0, .16); }
+.expensePeopleHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text); font-size: .9rem; }
+.expensePersonChoice { padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--muted); font-size: .78rem; }
+.expensePersonChoice.selected { color: var(--green); }
+.expensePeopleOptions { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 8px; margin-top: 8px; }
+.expensePersonAvatar { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 4px; border: 2px solid transparent; border-radius: 8px; background: transparent; color: var(--text); }
+.expensePersonAvatar span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .72rem; }
+.expensePersonAvatar.selected { border-color: var(--green); }
+.expensePersonAvatar.dimmed { filter: grayscale(1); opacity: .38; }
 label { display: flex; flex-direction: column; gap: 4px; font-size: .9rem; color: var(--muted); }
 label.check { flex-direction: row; align-items: center; color: var(--text); gap: 8px; font-size: 1rem; }
 label.check input { width: auto; }
@@ -132,7 +144,8 @@ label.check input { width: auto; }
 .tabs button.on { background: var(--green); color: #fff; }
 .fab { position: fixed; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 5; padding: 14px 20px; border-radius: 999px; box-shadow: 0 4px 12px rgba(0, 0, 0, .25); }
 .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); display: flex; align-items: flex-end; justify-content: center; z-index: 10; }
-.sheet { width: 100%; max-width: 560px; max-height: 92vh; overflow: auto; border-radius: 16px 16px 0 0; margin: 0; }
+.sheet { width: 100%; max-width: 560px; max-height: 92vh; overflow: auto; scrollbar-width: none; -ms-overflow-style: none; border-radius: 16px 16px 0 0; margin: 0; }
+.sheet::-webkit-scrollbar { display: none; }
 .clickable { cursor: pointer; }
 .month { font-weight: 700; font-size: .9rem; margin: 20px 0 4px; }
 .exp { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
@@ -287,9 +300,11 @@ label.check input { width: auto; }
 .expenseDateField .dateBtn { width: auto; white-space: nowrap; padding: 8px; font-size: .9rem; }
 .expenseFormHeading h3 { margin: 0; }
 .expenseCategoryIcon { width: 52px; height: 52px; display: grid; place-items: center; flex: none; border-radius: 14px; background: color-mix(in srgb, var(--green) 15%, var(--card)); font-size: 1.7rem; }
-.expenseCategoryPicker { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 8px; }
+.expenseCategoryPicker { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 8px; scrollbar-width: none; -ms-overflow-style: none; }
+.expenseCategoryPicker::-webkit-scrollbar { display: none; }
 .expenseCategoryPicker button { width: 42px; height: 42px; flex: none; padding: 0; background: var(--card); color: var(--text); border: 1px solid var(--border); font-size: 1.25rem; }
 .expenseCategoryPicker button.selected { border: 2px solid var(--green); background: color-mix(in srgb, var(--green) 12%, var(--card)); }
+.expenseCategoryTooltip { position: fixed; z-index: 20; transform: translateX(-50%); padding: 5px 8px; border-radius: 6px; background: var(--text); color: var(--card); font-size: .78rem; line-height: 1.2; white-space: nowrap; pointer-events: none; box-shadow: 0 2px 8px rgba(0, 0, 0, .2); }
 .expensePrimaryFields { display: flex; flex-direction: column; gap: 8px; }
 .expenseDescription { font-size: 1.08rem; }
 .expenseAmountField { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 8px; padding-left: 12px; color: var(--muted); }
